@@ -1,0 +1,119 @@
+{
+  "scene": {
+    "location": "apartment",
+    "time": "day",
+    "description": "A sunny, pleasant day. The kitchen is filled with light, with a faint smell of cleaning supplies.",
+    "interactive_objects": [
+      {
+        "name": "kitchen knife",
+        "location": "on the countertop",
+        "state": "clean"
+      },
+      {
+        "name": "pot of water",
+        "location": "on the stove",
+        "state": "cold"
+      },
+      {
+        "name": "window",
+        "location": "above the sink",
+        "state": "open"
+      },
+      {
+        "name": "bathroom door",
+        "location": "in the hallway",
+        "state": "closed"
+      }
+    ]
+  },
+  "characters": {
+    "Sveta": {
+      "age": 30,
+      "description": "A woman of medium height with long dark hair, often pulled back into a ponytail. She has kind eyes. She moves quickly and efficiently.",
+      "personality": "Playful, cheerful",
+      "current_action": "Sitting on the sofa",
+      "current_emotion": [
+        "calm",
+        "focused"
+      ],
+      "goal": "I need to find my grandmother's old locket. I think I left it somewhere in the living room.",
+      "knowledge": [
+        "The locket is very important to me.",
+        "Misha doesn't know I'm looking for it."
+      ],
+      "relationships": [
+        {
+          "target": "Misha",
+          "type": "son"
+        }
+      ],
+      "location_in_scene": "Living room",
+      "clothing": {
+        "head": [],
+        "face": [],
+        "underwear": [
+          "bra",
+          "panties"
+        ],
+        "torso": [
+          "t-shirt"
+        ],
+        "body": [],
+        "overwear": [
+          "leather jacket"
+        ],
+        "legs": [
+          "high-waisted leather pants"
+        ],
+        "feet": [
+          "high-heeled ankle boots"
+        ],
+        "hands": []
+      },
+      "inventory": [
+        "smartphone"
+      ],
+      "holding": []
+    },
+    "Misha": {
+      "age": 10,
+      "description": "A slender boy with messy blond hair and curious blue eyes. Often daydreams.",
+      "personality": "Curious, a bit mischievous, very attached to his mom.",
+      "current_action": "sitting on the sofa, reading a book",
+      "current_emotion": [
+        "curiosity",
+        "slight excitement"
+      ],
+      "goal": "I want to finish reading this chapter of my book.",
+      "knowledge": [
+        "Mom seems to be looking for something."
+      ],
+      "relationships": [
+        {
+          "target": "Sveta",
+          "type": "mother"
+        }
+      ],
+      "location_in_scene": "living room",
+      "clothing": {
+        "head": [],
+        "face": [],
+        "underwear": [
+          "briefs"
+        ],
+        "torso": [
+          "T-shirt"
+        ],
+        "body": [],
+        "overwear": [],
+        "legs": [
+          "shorts"
+        ],
+        "feet": [],
+        "hands": []
+      },
+      "inventory": [],
+      "holding": []
+    }
+  }
+}
