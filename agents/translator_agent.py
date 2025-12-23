@@ -1,4 +1,3 @@
-# translator_agent.py
 from openai import OpenAI
 
 
@@ -28,10 +27,6 @@ You are an expert English-to-Russian translator. Your task is to translate the u
         if not isinstance(text_to_translate, str) or not text_to_translate.strip():
             return text_to_translate
 
-        # We don't log translation prompts to avoid cluttering the main log.txt
-        # If needed for debugging, the following line can be uncommented:
-        # self.log_func("AGENT_PROMPT", text_to_translate, "TRANSLATOR AGENT")
-
         try:
             response = self.client.chat.completions.create(
                 model="local-model",
@@ -46,7 +41,6 @@ You are an expert English-to-Russian translator. Your task is to translate the u
             )
 
             translated_text = response.choices[0].message.content.strip()
-            # self.log_func("AGENT_RESPONSE", translated_text, "TRANSLATOR AGENT")
             return translated_text
         except Exception as e:
             self.log_func("SYSTEM", f"Error during translation: {e}")

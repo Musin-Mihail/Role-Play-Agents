@@ -1,4 +1,3 @@
-# motivation_generator_agent.py
 import json
 from openai import OpenAI
 
@@ -49,7 +48,6 @@ Do not use the exact phrasing from the examples in your output. They are for und
         """
         current_state_str = json.dumps(current_state_dict, indent=2, ensure_ascii=False)
 
-        # ИЗМЕНЕНО: Прямой доступ к персонажу по имени
         ai_character_details = current_state_dict["characters"].get(
             self.ai_character_name
         )

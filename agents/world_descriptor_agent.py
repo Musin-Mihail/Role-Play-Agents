@@ -1,4 +1,3 @@
-# world_descriptor_agent.py
 import json
 from openai import OpenAI
 

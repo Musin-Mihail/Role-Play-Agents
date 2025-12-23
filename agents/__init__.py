@@ -1,4 +1,3 @@
-# agents/__init__.py
 from .action_consequence_agent import ActionConsequenceAgent
 from .action_selector_agent import ActionSelectorAgent
 from .motivation_generator_agent import MotivationGeneratorAgent

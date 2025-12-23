@@ -1,8 +1,6 @@
-# main.py
 import traceback
 from openai import OpenAI
 
-# Импортируем наших агентов из пакета agents
 from agents import (
     ActionSelectorAgent,
     MotivationGeneratorAgent,
@@ -12,7 +10,6 @@ from agents import (
     TranslatorAgent,
 )
 
-# Импортируем наши модули
 from modules.state_manager import read_state, save_state
 from modules.chronology_manager import add_to_chronology
 from modules.turn_processors import create_turn_summary, summarize_chronology_if_needed
@@ -22,7 +19,7 @@ from modules.game_utils import (
     get_scene_context,
     get_characters_snapshot,
     clear_session_files,
-    deep_merge_dicts,  # <-- ИЗМЕНЕНО
+    deep_merge_dicts,
 )
 
 
@@ -105,13 +102,11 @@ def main():
 
             save_changes_for_review("USER INPUT", user_input, agents["translator"])
 
-            # 1. Последствия действия пользователя
             log_event("SYSTEM", "1/7 Determining consequences of your action...")
             user_state_changes, _ = agents["action_consequence"].determine_consequences(
                 current_state_dict, user_input, user_character_name
             )
 
-            # ИЗМЕНЕНО: Используем локальную функцию слияния
             intermediate_state = deep_merge_dicts(
                 user_state_changes, current_state_dict
             )
@@ -123,7 +118,6 @@ def main():
                 )
                 continue
 
-            # 2. Выбор действия ИИ
             log_event("SYSTEM", "2/7 Selecting AI action...")
             scene_context = get_scene_context(intermediate_state)
             characters_snapshot = get_characters_snapshot(intermediate_state)
@@ -143,14 +137,12 @@ def main():
                 last_turn_chronicle,
             )
 
-            # 3. Генерация мотивации ИИ
             log_event("SYSTEM", "3/7 Generating AI motivation...")
             motivation = agents["motivation_generator"].generate_motivation(
                 intermediate_state, planned_action, user_input
             )
             save_changes_for_review("AI MOTIVATION", motivation, agents["translator"])
 
-            # 4. Последствия действия ИИ
             log_event("SYSTEM", "4/7 Determining AI action consequences...")
             ai_state_changes, completed_actions = agents[
                 "action_consequence"
@@ -161,7 +153,6 @@ def main():
                 "AI COMPLETED ACTIONS", completed_actions, agents["translator"]
             )
 
-            # 5. Написание и проверка истории
             log_event("SYSTEM", "5/7 Writing and verifying story...")
             story_part = ""
             if completed_actions or ai_state_changes:
@@ -192,12 +183,9 @@ def main():
             else:
                 story_part = f"{ai_character_name} does nothing in response."
 
-            # 6. Применение изменений состояния ИИ
             log_event("SYSTEM", "6/7 Applying AI state changes...")
-            # ИЗМЕНЕНО: Используем локальную функцию слияния
             new_state = deep_merge_dicts(ai_state_changes, intermediate_state)
 
-            # 7. Сохранение результатов
             log_event("SYSTEM", "7/7 Saving results...")
             final_motivation_output = (
                 f"--- МОТИВАЦИЯ ({ai_character_name}) ---\n{motivation}"

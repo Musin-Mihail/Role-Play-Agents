@@ -1,4 +1,3 @@
-# story_verifier_agent.py
 import json
 from openai import OpenAI
 

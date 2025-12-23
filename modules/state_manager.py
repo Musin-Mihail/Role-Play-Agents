@@ -1,4 +1,3 @@
-# modules/state_manager.py
 import json
 import traceback
 

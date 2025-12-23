@@ -1,7 +1,5 @@
-# modules/turn_processors.py
 from .chronology_manager import read_chronology, overwrite_chronology
 
-# Системный промпт для Chronicler (взят из исходного файла)
 SYSTEM_PROMPT_CHRONICLER = """
 You are a historian and archivist. Your task is to write a brief, factual, third-person narrative summary of a single game turn based on the actions of two characters.
 *** CRITICAL RULES ***
@@ -13,7 +11,6 @@ You are a historian and archivist. Your task is to write a brief, factual, third
 6.  **BE OBJECTIVE**: Only record what happened. Do not include internal thoughts, motivations, or intentions unless they were explicitly stated as dialogue or action.
 """
 
-# Системный промпт для Summarizer (ПОЛНАЯ ВЕРСИЯ)
 SYSTEM_PROMPT_SUMMARIZER = """
 You are a scriptwriter and editor. Your task is to take a raw game log, which includes character thoughts, actions, and dialogues, and rewrite it into a concise, third-person narrative story.
 *** CRITICAL RULES ***

@@ -1,4 +1,3 @@
-# modules/chronology_manager.py
 import os
 
 CHRONOLOGY_FILE = "chronology.txt"

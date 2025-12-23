@@ -22,9 +22,8 @@ namespace Launcher
 
             _pythonProcess = new Process();
             _pythonProcess.StartInfo.FileName = "python";
-            _pythonProcess.StartInfo.Arguments = "-u \"main.py\""; // Теперь можно указывать просто имя файла
+            _pythonProcess.StartInfo.Arguments = "-u \"main.py\"";
 
-            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ:
             _pythonProcess.StartInfo.WorkingDirectory = projectRoot;
 
             _pythonProcess.StartInfo.UseShellExecute = false;
@@ -47,7 +46,6 @@ namespace Launcher
         {
             if (string.IsNullOrEmpty(text)) return;
 
-            // Вывод в UI поток
             Dispatcher.Invoke(() =>
             {
                 LogTextBox.AppendText(text + Environment.NewLine);
@@ -60,8 +58,8 @@ namespace Launcher
             string input = UserInputTextBox.Text;
             if (!string.IsNullOrEmpty(input) && _processInput != null)
             {
-                _processInput.WriteLine(input); // Отправка в Python (input())
-                AppendLog($"> {input}");        // Дублирование в лог
+                _processInput.WriteLine(input);
+                AppendLog($"> {input}");
                 UserInputTextBox.Clear();
             }
         }
@@ -70,7 +68,7 @@ namespace Launcher
         {
             if (_pythonProcess != null && !_pythonProcess.HasExited)
             {
-                _pythonProcess.Kill(); // Завершаем процесс при закрытии окна
+                _pythonProcess.Kill();
             }
             base.OnClosed(e);
         }

@@ -1,4 +1,3 @@
-# modules/game_utils.py
 import json
 import copy
 
@@ -18,17 +17,15 @@ def log_event(event_type, content, title=""):
         console_message = log_message
     elif event_type == "USER_INPUT":
         log_message = f"\n[USER INPUT] {content}"
-        # User input is printed by the input() function itself, so no console_message here.
     elif event_type == "AGENT_PROMPT":
         log_message = (
             f"\n--- PROMPT FOR: {title} ---\n\n{content.strip()}\n\n{'='*80}\n"
         )
-        # Prompts are not printed to the console to reduce clutter.
     elif event_type == "AGENT_RESPONSE":
         log_message = f"\n--- RESPONSE FROM: {title} ---\n\n{content}\n\n{'='*80}\n"
     else:
         log_message = f"\n[{event_type.upper()}] {content}"
-        console_message = content  # For FINAL_OUTPUT etc.
+        console_message = content
 
     if console_message:
         print(console_message)

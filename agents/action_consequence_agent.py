@@ -1,4 +1,3 @@
-# action_consequence_agent.py
 import json
 import re
 from openai import OpenAI

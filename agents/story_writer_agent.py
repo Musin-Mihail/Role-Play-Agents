@@ -1,4 +1,3 @@
-# story_writer_agent.py
 import json
 from openai import OpenAI
 
