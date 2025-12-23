@@ -218,3 +218,4 @@ review_changes.txt
 # IDE files
 .idea/
 .vscode/
+.vs/

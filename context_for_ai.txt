@@ -1,0 +1,1593 @@
+# Project Context
+# Root: d:\Repositories\Role-Play-Agents
+
+==================================================
+FILE: main.py
+==================================================
+# main.py
+import traceback
+from openai import OpenAI
+
+# Импортируем наших агентов из пакета agents
+from agents import (
+    ActionSelectorAgent,
+    MotivationGeneratorAgent,
+    ActionConsequenceAgent,
+    StoryWriterAgent,
+    StoryVerifierAgent,
+    TranslatorAgent,
+)
+
+# Импортируем наши модули
+from modules.state_manager import read_state, save_state
+from modules.chronology_manager import add_to_chronology
+from modules.turn_processors import create_turn_summary, summarize_chronology_if_needed
+from modules.game_utils import (
+    log_event,
+    save_changes_for_review,
+    get_scene_context,
+    get_characters_snapshot,
+    clear_session_files,
+    deep_merge_dicts,  # <-- ИЗМЕНЕНО
+)
+
+
+def setup_game():
+    """Подготовка к началу игры: выбор персонажа и инициализация агентов."""
+    state_dict = read_state(lambda msg: log_event("SYSTEM", msg))
+    if not state_dict:
+        return None, None, None, None
+
+    character_names = list(state_dict.get("characters", {}).keys())
+    log_event("SYSTEM", "Choose your character:")
+    for i, name in enumerate(character_names):
+        print(f"  {i + 1}: {name}")
+
+    while True:
+        try:
+            choice = input(
+                f"Enter the number of your character (1-{len(character_names)}) > "
+            )
+            selected_index = int(choice) - 1
+            if 0 <= selected_index < len(character_names):
+                user_character_name = character_names[selected_index]
+                break
+            else:
+                log_event("SYSTEM", "Error! Please enter a valid number from the list.")
+        except ValueError:
+            log_event("SYSTEM", "Error! Please enter a number.")
+
+    ai_character_name = [
+        name for name in character_names if name != user_character_name
+    ][0]
+    log_event("SYSTEM", f"\nYou are {user_character_name}. AI is {ai_character_name}.")
+
+    client = OpenAI(base_url="http://localhost:1234/v1", api_key="not-needed")
+
+    agents = {
+        "translator": TranslatorAgent(client=client, log_func=log_event),
+        "action_selector": ActionSelectorAgent(
+            client=client, ai_character_name=ai_character_name, log_func=log_event
+        ),
+        "motivation_generator": MotivationGeneratorAgent(
+            client=client, ai_character_name=ai_character_name, log_func=log_event
+        ),
+        "action_consequence": ActionConsequenceAgent(client=client, log_func=log_event),
+        "story_writer": StoryWriterAgent(
+            client=client,
+            ai_character_name=ai_character_name,
+            user_character_name=user_character_name,
+            log_func=log_event,
+        ),
+        "story_verifier": StoryVerifierAgent(client=client, log_func=log_event),
+    }
+    return client, agents, user_character_name, ai_character_name
+
+
+def main():
+    log_event("SYSTEM", "--- Interactive Role-Play Started ---")
+    clear_session_files()
+
+    client, agents, user_character_name, ai_character_name = setup_game()
+    if not agents:
+        log_event("SYSTEM", "Game setup failed. Exiting.")
+        return
+
+    last_planned_action = "has not acted yet"
+    last_turn_chronicle = "This is the first turn of the story."
+    current_state_dict = read_state(lambda msg: log_event("SYSTEM", msg))
+
+    while True:
+        try:
+            summarize_chronology_if_needed(client)
+            user_input = input(f"\nYour turn ({user_character_name}) > ").strip()
+            log_event("USER_INPUT", user_input)
+            if user_input.lower() == "exit":
+                break
+            if not user_input:
+                log_event("SYSTEM", "Empty message.")
+                continue
+
+            save_changes_for_review("USER INPUT", user_input, agents["translator"])
+
+            # 1. Последствия действия пользователя
+            log_event("SYSTEM", "1/7 Determining consequences of your action...")
+            user_state_changes, _ = agents["action_consequence"].determine_consequences(
+                current_state_dict, user_input, user_character_name
+            )
+
+            # ИЗМЕНЕНО: Используем локальную функцию слияния
+            intermediate_state = deep_merge_dicts(
+                user_state_changes, current_state_dict
+            )
+
+            if not intermediate_state:
+                log_event(
+                    "SYSTEM",
+                    "Critical Error! Failed to create intermediate state. Skipping turn.",
+                )
+                continue
+
+            # 2. Выбор действия ИИ
+            log_event("SYSTEM", "2/7 Selecting AI action...")
+            scene_context = get_scene_context(intermediate_state)
+            characters_snapshot = get_characters_snapshot(intermediate_state)
+
+            ai_char_goal = (
+                intermediate_state.get("characters", {})
+                .get(ai_character_name, {})
+                .get("goal", "No goal")
+            )
+
+            planned_action = agents["action_selector"].select_action(
+                ai_char_goal,
+                scene_context,
+                characters_snapshot,
+                user_input,
+                last_planned_action,
+                last_turn_chronicle,
+            )
+
+            # 3. Генерация мотивации ИИ
+            log_event("SYSTEM", "3/7 Generating AI motivation...")
+            motivation = agents["motivation_generator"].generate_motivation(
+                intermediate_state, planned_action, user_input
+            )
+            save_changes_for_review("AI MOTIVATION", motivation, agents["translator"])
+
+            # 4. Последствия действия ИИ
+            log_event("SYSTEM", "4/7 Determining AI action consequences...")
+            ai_state_changes, completed_actions = agents[
+                "action_consequence"
+            ].determine_consequences(
+                intermediate_state, planned_action, ai_character_name
+            )
+            save_changes_for_review(
+                "AI COMPLETED ACTIONS", completed_actions, agents["translator"]
+            )
+
+            # 5. Написание и проверка истории
+            log_event("SYSTEM", "5/7 Writing and verifying story...")
+            story_part = ""
+            if completed_actions or ai_state_changes:
+                for attempt in range(3):
+                    current_story_part = agents["story_writer"].write_story(
+                        completed_actions,
+                        motivation,
+                        intermediate_state,
+                        user_input,
+                        last_turn_chronicle,
+                        None,
+                    )
+                    is_verified, feedback = agents["story_verifier"].verify(
+                        completed_actions, current_story_part
+                    )
+                    if is_verified:
+                        story_part = current_story_part
+                        log_event("SYSTEM", f"Story verified on attempt {attempt+1}.")
+                        break
+                    else:
+                        log_event(
+                            "SYSTEM",
+                            f"Verification failed (Attempt {attempt + 1}/3): {feedback}. Retrying...",
+                        )
+                else:
+                    log_event("SYSTEM", "Story generation failed. Discarding turn.")
+                    continue
+            else:
+                story_part = f"{ai_character_name} does nothing in response."
+
+            # 6. Применение изменений состояния ИИ
+            log_event("SYSTEM", "6/7 Applying AI state changes...")
+            # ИЗМЕНЕНО: Используем локальную функцию слияния
+            new_state = deep_merge_dicts(ai_state_changes, intermediate_state)
+
+            # 7. Сохранение результатов
+            log_event("SYSTEM", "7/7 Saving results...")
+            final_motivation_output = (
+                f"--- МОТИВАЦИЯ ({ai_character_name}) ---\n{motivation}"
+            )
+            final_story_output = f"--- {ai_character_name} ---\n{story_part}"
+            log_event(
+                "FINAL_OUTPUT", f"{final_motivation_output}\n\n{final_story_output}"
+            )
+
+            if new_state and save_state(
+                new_state, lambda msg: log_event("SYSTEM", msg)
+            ):
+                current_state_dict = new_state
+                turn_summary = create_turn_summary(
+                    client,
+                    user_character_name,
+                    user_input,
+                    ai_character_name,
+                    story_part,
+                    motivation,
+                )
+                add_to_chronology(turn_summary)
+                last_turn_chronicle = turn_summary
+                last_planned_action = planned_action
+                log_event("CHRONICLER_SUMMARY", turn_summary)
+                save_changes_for_review(
+                    "CHRONICLER SUMMARY", turn_summary, agents["translator"]
+                )
+            else:
+                log_event("SYSTEM", "Turn failed. State not saved.")
+
+        except Exception as e:
+            error_message = f"An unexpected error occurred: {e}"
+            log_event("SYSTEM", error_message)
+            traceback.print_exc()
+
+
+if __name__ == "__main__":
+    main()
+
+
+==================================================
+FILE: README.md
+==================================================
+# Role-Play Agents Project
+
+Этот проект представляет собой интерактивную ролевую игру, управляемую набором специализированных ИИ-агентов. Он создает динамичный повествовательный опыт, в котором один персонаж управляется пользователем, а другой — искусственным интеллектом. История развивается пошагово, где каждый ход обрабатывается цепочкой агентов для обеспечения логической последовательности, глубины персонажа и целостности игрового мира.
+
+## Основная концепция
+
+Игра строится вокруг файла `state.json`, который содержит полное описание игрового мира: сцену, объекты и состояние персонажей. Пользователь вводит действие своего персонажа, а система ИИ-агентов обрабатывает этот ввод, определяет реакцию ИИ-персонажа, обновляет состояние мира и генерирует следующий фрагмент истории.
+
+## Как это работает: жизненный цикл одного хода
+
+## Каждый ход в игре проходит через четко определенную последовательность шагов, выполняемых различными агентами:
+1. **Ввод пользователя**: Пользователь пишет, что делает его персонаж.
+
+2. **Определение последствий действия пользователя (`ActionConsequenceAgent`)**: Агент анализирует действие пользователя и определяет, как оно изменяет состояние мира в `state.json`. Например, если пользователь берет предмет, агент обновит поля `holding` у персонажа и `location` у предмета.
+
+3. **Выбор действия ИИ (`ActionSelectorAgent`)**: На основе действия пользователя, текущей цели и контекста сцены ИИ-персонаж решает, какое действие предпринять следующим. Этот агент следует строгой иерархии приоритетов: реакция на угрозу > реакция на прямое взаимодействие > достижение личной цели.
+
+4. **Генерация мотивации (`MotivationGeneratorAgent`)**: После того как действие выбрано, этот агент генерирует внутреннюю мотивацию или причину, по которой ИИ-персонаж решил поступить именно так. Это добавляет персонажу глубины и правдоподобности.
+
+5. **Определение последствий действия ИИ (`ActionConsequenceAgent`)**: Так же, как и для пользователя, этот агент определяет, как запланированное действие ИИ повлияет на `state.json`. На выходе он создает список конкретных выполненных действий (например, `["взял нож", "подошел к столу"]`).
+
+6. **Написание истории (`StoryWriterAgent`)**: Агент-сценарист берет выполненные действия, мотивацию, действие пользователя и общий контекст, чтобы написать художественный фрагмент истории от первого лица ИИ-персонажа.
+
+7. **Проверка истории (`StoryVerifierAgent`)**: Агент контроля качества. Он проверяет, соответствует ли написанная история списку выполненных действий. Если в истории есть выдуманные действия или упущены обязательные, она отправляется на доработку. Этот процесс может повторяться до 3 раз.
+
+8. **Обновление состояния и хронологии**: Если все шаги прошли успешно, итоговые изменения сохраняются в `state.json`, а краткое изложение хода (генерируемое `Chronicler`) добавляется в `chronology.txt`.
+
+### Вспомогательные агенты
+
+- **`TranslatorAgent`**: Используется для перевода элементов интерфейса и логов на другой язык, обеспечивая лучшую читаемость.
+
+- **`WorldDescriptorAgent`**: Преобразует `state.json` в текстовое описание, которое используется другими агентами для понимания контекста.
+
+## Структура проекта
+
+- `main.py`: Главный исполняемый файл, который запускает игровой цикл.
+
+- `state.json`: "Сердце" игры. Файл, хранящий все состояние игрового мира. Его редактирование позволяет создавать новые сценарии.
+
+- `/agents`: Директория, содержащая классы для каждого ИИ-агента.
+
+- `/modules`: Модули-помощники для управления состоянием, ведения логов, обработки хронологии и других утилит.
+
+- `log.txt`: Подробный лог всех вызовов агентов, их промптов и ответов. Полезен для отладки.
+
+- `chronology.txt`: Краткая история всех ходов в повествовательной форме.
+
+- `review_changes.txt`: Файл, в который сохраняются ключевые решения и результаты хода в удобочитаемом формате.
+
+## Требования
+
+- Python 3.x
+
+- Библиотека `openai` (`pip install openai`)
+
+- Локальный сервер, совместимый с OpenAI API (например, LM Studio, Ollama), запущенный по адресу `http://localhost:1234/v1`.
+
+## Как запустить
+
+# 1. **Настройте локальный ИИ-сервер**:
+
+- Скачайте и установите LM Studio или другой подобный инструмент.
+
+- Загрузите модель (например, одну из версий Llama, Mistral и т.д.).
+
+- Запустите сервер по адресу `http://localhost:1234/v1`.
+
+2. **Установите зависимости**:
+
+   pip install openai
+
+3. **(Опционально) Настройте сценарий**:
+
+   - Откройте `state.json` и отредактируйте описание сцены, персонажей, их цели и инвентарь, чтобы создать свой собственный сценарий.
+
+4. **Запустите игру**:
+
+   python main.py
+
+5. Следуйте инструкциям в консоли, чтобы выбрать персонажа и начать игру. Для выхода из игры введите `exit`.
+
+
+==================================================
+FILE: state.json
+==================================================
+{
+  "scene": {
+    "location": "apartment",
+    "time": "day",
+    "description": "A sunny, pleasant day. The kitchen is filled with light, with a faint smell of cleaning supplies.",
+    "interactive_objects": [
+      {
+        "name": "kitchen knife",
+        "location": "on the countertop",
+        "state": "clean"
+      },
+      {
+        "name": "pot of water",
+        "location": "on the stove",
+        "state": "cold"
+      },
+      {
+        "name": "window",
+        "location": "above the sink",
+        "state": "open"
+      },
+      {
+        "name": "bathroom door",
+        "location": "in the hallway",
+        "state": "closed"
+      }
+    ]
+  },
+  "characters": {
+    "Sveta": {
+      "age": 30,
+      "description": "A woman of medium height with long dark hair, often pulled back into a ponytail. She has kind eyes. She moves quickly and efficiently.",
+      "personality": "Playful, cheerful",
+      "current_action": "Sitting on the sofa",
+      "current_emotion": [
+        "calm",
+        "focused"
+      ],
+      "goal": "I need to find my grandmother's old locket. I think I left it somewhere in the living room.",
+      "knowledge": [
+        "The locket is very important to me.",
+        "Misha doesn't know I'm looking for it."
+      ],
+      "relationships": [
+        {
+          "target": "Misha",
+          "type": "son"
+        }
+      ],
+      "location_in_scene": "Living room",
+      "clothing": {
+        "head": [],
+        "face": [],
+        "underwear": [
+          "bra",
+          "panties"
+        ],
+        "torso": [
+          "t-shirt"
+        ],
+        "body": [],
+        "overwear": [
+          "leather jacket"
+        ],
+        "legs": [
+          "high-waisted leather pants"
+        ],
+        "feet": [
+          "high-heeled ankle boots"
+        ],
+        "hands": []
+      },
+      "inventory": [
+        "smartphone"
+      ],
+      "holding": []
+    },
+    "Misha": {
+      "age": 10,
+      "description": "A slender boy with messy blond hair and curious blue eyes. Often daydreams.",
+      "personality": "Curious, a bit mischievous, very attached to his mom.",
+      "current_action": "sitting on the sofa, reading a book",
+      "current_emotion": [
+        "curiosity",
+        "slight excitement"
+      ],
+      "goal": "I want to finish reading this chapter of my book.",
+      "knowledge": [
+        "Mom seems to be looking for something."
+      ],
+      "relationships": [
+        {
+          "target": "Sveta",
+          "type": "mother"
+        }
+      ],
+      "location_in_scene": "living room",
+      "clothing": {
+        "head": [],
+        "face": [],
+        "underwear": [
+          "briefs"
+        ],
+        "torso": [
+          "T-shirt"
+        ],
+        "body": [],
+        "overwear": [],
+        "legs": [
+          "shorts"
+        ],
+        "feet": [],
+        "hands": []
+      },
+      "inventory": [],
+      "holding": []
+    }
+  }
+}
+
+
+==================================================
+FILE: agents\action_consequence_agent.py
+==================================================
+# action_consequence_agent.py
+import json
+import re
+from openai import OpenAI
+
+
+class ActionConsequenceAgent:
+    """
+    Agent that determines the direct consequences of a planned action for a SPECIFIC character.
+    """
+
+    SYSTEM_PROMPT = """
+*** CRITICAL ANALYSIS ALGORITHM ***
+1.  **Analyze the Action**: Based on the `[PLANNED ACTION]` for `{character_name}`, determine the direct, immediate consequences.
+
+2.  **CRITICAL CHECK: VERIFY OBJECT EXISTENCE**: Identify the primary object of the action (e.g., for "pick up the knife", the object is "knife"). You MUST verify that this object exists in the `[CURRENT JSON STATE]` (in `clothing`, `holding`, `inventory`, or `scene.interactive_objects`). Do not invent items.
+
+3.  **Read the State**: Look at the `[CURRENT JSON STATE]` to see the original values of the fields you need to change.
+
+4.  **Construct the Output**:
+    * **IF THE OBJECT DOES NOT EXIST**: This is a FAILED action. Your ONLY `state_changes` should be to set the character's `current_action` to describe their confusion. See the "FAILED ACTION" example below.
+    * **IF THE OBJECT EXISTS**: This is a SUCCESSFUL action. Your output JSON's `state_changes` field MUST be a JSON object mirroring the structure of the original state, but containing ONLY the keys that have changed. For lists (like `current_emotion` or `holding`), you must provide the **complete final version** of the list.
+
+*** CRITICAL OUTPUT FORMAT ***
+Your response MUST be a single valid JSON object containing "state_changes" (a JSON object with the updates) and "completed_actions" (a list of strings).
+
+*** EXAMPLE OF SUCCESSFUL ACTION (OBJECT FOUND) ***
+- **PLANNED ACTION**: `take off Sveta's jacket and place it on the sofa`
+- **CURRENT STATE (relevant parts)**:
+  - `characters.Sveta.clothing.overwear`: `["leather jacket"]`
+  - `scene.interactive_objects`: (list without the jacket)
+- **YOUR OUTPUT (as a single JSON object)**:
+{{
+  "state_changes": {{
+    "scene": {{
+      "interactive_objects": [
+        {{ "name": "jacket", "location": "on the sofa" }}
+      ]
+    }},
+    "characters": {{
+      "Sveta": {{ "clothing": {{ "overwear": [] }} }},
+      "Misha": {{ "current_action": "standing near Sveta, having placed her jacket on the sofa" }}
+    }}
+  }},
+  "completed_actions": ["Misha: took off Sveta's jacket", "Misha: placed the jacket on the sofa"]
+}}
+
+*** EXAMPLE OF FAILED ACTION (OBJECT NOT FOUND) ***
+- **PLANNED ACTION**: `take off my blouse`
+- **CURRENT STATE**: (Sveta is wearing a "t-shirt" and a "jacket", but no "blouse")
+- **YOUR OUTPUT**:
+{{
+  "state_changes": {{
+    "characters": {{
+      "Sveta": {{
+        "current_action": "looks down at her clothes, confused, as she is not wearing a blouse"
+      }}
+    }}
+  }},
+  "completed_actions": ["Sveta: tried to take off a blouse but was not wearing one"]
+}}
+"""
+
+    def __init__(self, client: OpenAI, log_func):
+        self.client = client
+        self.log_func = log_func
+
+    def determine_consequences(
+        self, current_state_dict, planned_action, character_name
+    ):
+        current_state_str = json.dumps(current_state_dict, indent=2, ensure_ascii=False)
+        agent_name = f"AGENT 3: ACTION CONSEQUENCE (for {character_name})"
+
+        prompt = f"""
+[CURRENT JSON STATE]
+{current_state_str}
+
+[PLANNED ACTION FOR {character_name}]
+{planned_action}
+
+[YOUR TASK]
+Deconstruct the action for `{character_name}` and generate the `state_changes` (as a JSON object) and `completed_actions` lists according to your critical rules.
+"""
+        self.log_func("AGENT_PROMPT", prompt, agent_name)
+
+        response = self.client.chat.completions.create(
+            model="local-model",
+            messages=[
+                {
+                    "role": "system",
+                    "content": self.SYSTEM_PROMPT.format(character_name=character_name),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.0,
+        )
+
+        response_text = response.choices[0].message.content
+        self.log_func("AGENT_RESPONSE", response_text, agent_name)
+
+        try:
+            json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
+            if json_match:
+                clean_json_str = json_match.group(0)
+                clean_json_str = re.sub(r",\s*([\}\]])", r"\1", clean_json_str)
+                result = json.loads(clean_json_str)
+            else:
+                raise json.JSONDecodeError("No JSON object found", response_text, 0)
+
+            state_changes = result.get("state_changes", {})
+            completed_actions = result.get("completed_actions", [])
+            return state_changes, completed_actions
+        except (json.JSONDecodeError, AttributeError, IndexError) as e:
+            error_msg = f"ActionConsequenceAgent returned invalid JSON. Error: {e}"
+            self.log_func("SYSTEM", error_msg)
+            self.log_func("SYSTEM", f"Raw response was:\n---\n{response_text}\n---")
+            return {}, []
+
+
+==================================================
+FILE: agents\action_selector_agent.py
+==================================================
+# action_selector_agent.py
+from openai import OpenAI
+
+
+class ActionSelectorAgent:
+    """
+    Агент, ответственный ТОЛЬКО за выбор следующего действия.
+    """
+
+    SYSTEM_PROMPT = """
+You are {character_name}, a character in a role-playing game. Your single task is to decide on your NEXT immediate physical action.
+
+*** CRITICAL ANALYSIS HIERARCHY ***
+Your decision-making MUST follow this strict order of priorities.
+1.  **ANALYZE LATEST USER ACTION**: Look at `[LATEST USER ACTION]`.
+    - **PRIORITY 1: BOUNDARIES & SAFETY:** Is the user's action aggressive, shocking, or physically violating? If so, your action MUST be a direct and realistic reaction. This OVERRIDES your personal goal.
+    - **PRIORITY 2: DIRECT INTERACTION:** If the action is not violating, is it a normal interaction (e.g., talking, touching a shoulder)? Your action MUST be a logical response to this interaction.
+    - **PRIORITY 3: PERSONAL GOAL:** If the user is passive (e.g., sleeping, reading) or their action does not require a direct reaction, you MUST choose a logical next step to advance `[YOUR GOAL]`.
+
+*** CRITICAL RULES OF ACTION SELECTION ***
+1.  **MAINTAIN CONTINUITY:** Your primary focus is the `[LATEST USER ACTION]`, but you MUST consider the `[LAST TURN'S CHRONICLE]` and your `current_emotion` to ensure your action is emotionally consistent. Do not have emotional amnesia.
+
+2.  **THINK IN COMPLETE STEPS (NO MICRO-ACTIONS!)**:
+    * Your previous action was: `{last_ai_action}`.
+    * You MUST choose a new, distinct, and significant action.
+    * **CRITICAL FAILURE CONDITION**: Actions that are a slight variation or direct continuation of the previous one are FORBIDDEN. For example, a sequence like "start unbuttoning shirt" -> "continue unbuttoning shirt" is a CRITICAL FAILURE.
+    * Instead of breaking one goal into many tiny movements, complete one logical step per turn. A better single action would be "take off the jacket and place it on the sofa" instead of three separate turns for reaching, unzipping, and removing.
+
+3.  **ABSOLUTE GROUNDING RULE:** Your action MUST NOT involve any object, item, or piece of clothing that is NOT explicitly listed in the [CHARACTERS SNAPSHOT] or [SCENE CONTEXT]. Inventing items is a CRITICAL FAILURE and is forbidden.
+
+4.  **STRICT OUTPUT FORMAT:** Your response MUST be ONLY a short, descriptive phrase detailing your immediate physical or verbal action. DO NOT add any other text, explanations, or greetings.
+
+*** EXAMPLE OF CORRECT GOAL PROGRESSION ***
+- GOAL: find my lost keys in the living room
+- USER ACTION: is sleeping
+- (Turn 1) PREVIOUS AI ACTION: has not acted yet
+- YOUR OUTPUT: stand up from the sofa
+-
+- (Turn 2) PREVIOUS AI ACTION: stand up from the sofa
+- YOUR OUTPUT: look under the sofa cushions
+-
+- (Turn 3) PREVIOUS AI ACTION: look under the sofa cushions
+- YOUR OUTPUT: check the pockets of the jacket lying on the chair
+
+*** IMPORTANT ***
+Do not use the exact phrasing from the examples in your output. They are for understanding the required logic only.
+"""
+
+    def __init__(self, client: OpenAI, ai_character_name: str, log_func):
+        self.client = client
+        self.ai_character_name = ai_character_name
+        self.log_func = log_func
+
+    def select_action(
+        self,
+        current_task,
+        scene_context,
+        characters_snapshot,
+        user_input,
+        last_ai_action,
+        last_turn_chronicle,
+    ):
+        agent_name = "AGENT 1.1: ACTION SELECTOR (GROUNDED)"
+        prompt = f"""
+[LAST TURN'S CHRONICLE]
+This is what happened right before the user's latest action: "{last_turn_chronicle}"
+
+[SCENE CONTEXT]
+{scene_context}
+
+[CHARACTERS SNAPSHOT]
+{characters_snapshot}
+
+[LATEST USER ACTION]
+The other character just did this: "{user_input}"
+
+[YOUR GOAL]
+Your current personal background goal is: "{current_task}".
+
+[YOUR PREVIOUS ACTION]
+Your last action was: "{last_ai_action}"
+
+[YOUR TASK]
+Follow your CRITICAL ANALYSIS HIERARCHY and CRITICAL RULES. Your highest priority is reacting appropriately to the LATEST user action, while maintaining emotional continuity with past events. State your new action as a concise command phrase.
+"""
+        self.log_func("AGENT_PROMPT", prompt, agent_name)
+
+        response = (
+            self.client.chat.completions.create(
+                model="local-model",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": self.SYSTEM_PROMPT.format(
+                            character_name=self.ai_character_name,
+                            last_ai_action=last_ai_action,
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.7,
+            )
+            .choices[0]
+            .message.content.strip()
+        )
+
+        self.log_func("AGENT_RESPONSE", response, agent_name)
+        return response
+
+
+==================================================
+FILE: agents\motivation_generator_agent.py
+==================================================
+# motivation_generator_agent.py
+import json
+from openai import OpenAI
+
+
+class MotivationGeneratorAgent:
+    """
+    Агент, ответственный ТОЛЬКО за генерацию мотивации для УЖЕ ВЫБРАННОГО действия.
+    """
+
+    SYSTEM_PROMPT = """
+You are {character_name}, a character in a role-playing game. Your single task is to explain your reasoning (motivation) for a specific action that has already been decided for you.
+
+*** CRITICAL ANALYSIS ALGORITHM ***
+1.  **Analyze the Action:** Look at the `[PLANNED ACTION]` you have been given.
+2.  **Analyze the Context**: Look at the `[USER'S ACTION]`. Did the user's action prompt your planned action?
+3.  **Generate Motivation**: Your explanation MUST connect your `[PLANNED ACTION]` to the `[USER'S ACTION]` and your overall `goal`.
+    * If your action is a direct reaction, explain why you reacted that way.
+    * If your action is a continuation of your goal (because the user was passive), explain how it serves your goal.
+
+*** CRITICAL OUTPUT RULE ***
+Your response MUST be ONLY the text of the motivation.
+
+*** EXAMPLES (FOR STYLE ONLY - DO NOT COPY) ***
+- **Example 1 (Reacting to User):**
+  - USER'S ACTION: `I ask what you are looking for.`
+  - PLANNED ACTION: `tell him I'm looking for my keys`
+  - GOAL: `find my lost keys`
+  - YOUR OUTPUT: `His question was direct, so I decided it was easier to just tell him the truth instead of being secretive.`
+
+- **Example 2 (Acting on Goal during User Passivity):**
+  - USER'S ACTION: `I continue reading my book.`
+  - PLANNED ACTION: `look under the sofa`
+  - GOAL: `find my lost keys`
+  - YOUR OUTPUT: `He seems occupied with his book, so it's a good moment to continue my search. The sofa is the most likely place.`
+  
+*** IMPORTANT ***
+Do not use the exact phrasing from the examples in your output. They are for understanding the required style and logic only.
+"""
+
+    def __init__(self, client: OpenAI, ai_character_name: str, log_func):
+        self.client = client
+        self.ai_character_name = ai_character_name
+        self.log_func = log_func
+
+    def generate_motivation(self, current_state_dict, planned_action, user_input):
+        """
+        Генерирует мотивацию для заданного действия.
+        """
+        current_state_str = json.dumps(current_state_dict, indent=2, ensure_ascii=False)
+
+        # ИЗМЕНЕНО: Прямой доступ к персонажу по имени
+        ai_character_details = current_state_dict["characters"].get(
+            self.ai_character_name
+        )
+
+        current_task = (
+            ai_character_details.get("goal", "No current goal.")
+            if ai_character_details
+            else "No goal found."
+        )
+        agent_name = "AGENT 1.2: MOTIVATION GENERATOR (DIVERSIFIED)"
+        prompt = f"""
+[CURRENT JSON]
+{current_state_str}
+
+[USER'S ACTION]
+The other character just did this: "{user_input}"
+
+[CONTEXT]
+Your current goal is: "{current_task}".
+The action you have decided to take in response is: "{planned_action}".
+
+[YOUR TASK]
+Explain your motivation. If it's a reaction, explain the reaction. If it's not a reaction, explain how it serves your goal.
+Your response must be only the explanation.
+"""
+        self.log_func("AGENT_PROMPT", prompt, agent_name)
+
+        response = (
+            self.client.chat.completions.create(
+                model="local-model",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": self.SYSTEM_PROMPT.format(
+                            character_name=self.ai_character_name
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.7,
+            )
+            .choices[0]
+            .message.content.strip()
+        )
+
+        self.log_func("AGENT_RESPONSE", response, agent_name)
+        return response
+
+
+==================================================
+FILE: agents\story_verifier_agent.py
+==================================================
+# story_verifier_agent.py
+import json
+from openai import OpenAI
+
+
+class StoryVerifierAgent:
+    """
+    An agent that acts as a quality control check. It verifies if the generated
+    story accurately and exclusively reflects all the required completed actions.
+    """
+
+    SYSTEM_PROMPT = """
+You are a meticulous verification engine. Your task is to compare a narrative story against a required script of actions. You must determine if the story perfectly represents the script.
+
+*** CRITICAL ANALYSIS ALGORITHM ***
+1.  **Verify All Script Actions are Present**: Go through each action in the `[COMPLETED ACTIONS]` list (the script). Ensure that a corresponding event, however creatively described, exists in the `[STORY TEXT]`.
+2.  **Verify No Extraneous Elements**: Read the `[STORY TEXT]` and ensure it does not contain:
+    a.  Any significant physical actions that are NOT in the script.
+    b.  Any items or objects being held, used, or mentioned that are NOT present in the provided game context (JSON). This is a critical check.
+3.  **Make a Decision**:
+    * If all script actions are present AND there are no significant extraneous elements, the result is "PASS".
+    * If an action from the script is missing, the result is "FAIL".
+    * If the story contains a significant action or object not found in the script/context, the result is "FAIL".
+
+*** CRITICAL OUTPUT FORMAT ***
+Your response MUST be a single, valid JSON object.
+- If successful: `{"result": "PASS"}`
+- If it fails: `{"result": "FAIL", "reason": "A clear, concise explanation of the failure."}`
+
+**Example 1 (Pass):**
+- SCRIPT: `["Sveta: stood up from the sofa"]`
+- STORY: "Sveta rose from her seat, stretching her back."
+- YOUR OUTPUT: `{"result": "PASS"}`
+
+**Example 2 (Fail - Missing Action):**
+- SCRIPT: `["Sveta: stood up", "Sveta: dropped the pants"]`
+- STORY: "Sveta stood up, holding her pants."
+- YOUR OUTPUT: `{"result": "FAIL", "reason": "The story is missing the action: 'Sveta: dropped the pants'"}`
+
+**Example 3 (Fail - Extraneous Object):**
+- SCRIPT: `["Sveta: took off t-shirt"]`
+- STORY: "Sveta took off her t-shirt and lit a cigarette."
+- YOUR OUTPUT: `{"result": "FAIL", "reason": "The story contains an extraneous object not in the game state: 'cigarette'"}`
+"""
+
+    def __init__(self, client: OpenAI, log_func):
+        self.client = client
+        self.log_func = log_func
+
+    def verify(self, completed_actions, story_text):
+        """
+        Verifies the story against the completed actions.
+        Returns a tuple: (bool: is_verified, str: feedback_or_error_message)
+        """
+        actions_str = "\n".join(completed_actions)
+        agent_name = "AGENT 4.5: STORY VERIFIER (IMPROVED)"
+        prompt = f"""
+[COMPLETED ACTIONS] (Script)
+{actions_str}
+
+[STORY TEXT] (To Verify)
+{story_text}
+
+[YOUR TASK]
+Compare the script against the story text. Ensure ALL script actions are present and NO major extraneous actions or objects have been added. Provide your verification result in the specified JSON format.
+"""
+        self.log_func("AGENT_PROMPT", prompt, agent_name)
+
+        response = self.client.chat.completions.create(
+            model="local-model",
+            messages=[
+                {"role": "system", "content": self.SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.0,
+        )
+
+        response_text = response.choices[0].message.content
+        self.log_func("AGENT_RESPONSE", response_text, agent_name)
+
+        try:
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0]
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0]
+
+            result = json.loads(response_text)
+            if result.get("result") == "PASS":
+                return True, "Verified successfully."
+            else:
+                reason = result.get("reason", "undisclosed reason")
+                return False, f"Story verification failed. Reason: {reason}"
+        except (json.JSONDecodeError, AttributeError, IndexError) as e:
+            error_msg = f"StoryVerifierAgent returned invalid JSON. Error: {e}"
+            self.log_func("SYSTEM", error_msg)
+            self.log_func("SYSTEM", f"Raw response was:\n---\n{response_text}\n---")
+            return False, "Verifier agent returned invalid data."
+
+
+==================================================
+FILE: agents\story_writer_agent.py
+==================================================
+# story_writer_agent.py
+import json
+from openai import OpenAI
+
+
+class StoryWriterAgent:
+    """
+    Agent-screenwriter. Turns a precise action plan into a literary text,
+    based on the full context of the world. Can revise its work based on feedback.
+    """
+
+    SYSTEM_PROMPT = """
+You are the character {character_name} in a role-playing game. Your task is to write a story segment from your first-person perspective based on the current situation.
+
+*** CRITICAL RULES ***
+1.  **FIRST-PERSON ONLY**: Your entire response MUST be written from the "I" perspective of {character_name}.
+2.  **DESCRIBE THE PRESENT**: Your story must describe the events of the current turn. Start by describing the other character's action (`[USER'S ACTION]`) and then describe your own reaction based on your `[COMPLETED ACTIONS]` and `[MOTIVATION FOR THE ACTIONS]`.
+3.  **INCLUDE DIALOGUE**: If your planned action is verbal, turn it into natural dialogue. For example, if your action is "ask him what he wants", you should write something like, "I looked at him and asked, 'What do you want?'". Even if the action isn't explicitly verbal, feel free to add short lines of dialogue that fit the situation.
+4.  **SHOW, DON'T TELL**: Weave your motivation and feelings directly into your thoughts and actions. Instead of saying "I felt surprised," describe the feeling: "My heart skipped a beat."
+5.  **NO TAGS**: Do not include any tags like [STORY] or character names as headers. Just write the story text.
+6.  **DO NOT REPEAT**: Do not repeat events that are already described in the `[LAST TURN'S CHRONICLE]`.
+7.  **ABSOLUTE GROUNDING RULE**: You MUST NOT invent or mention any object, item, or piece of clothing that is NOT explicitly listed in the [CURRENT JSON] context. Mentioning a non-existent item is a critical failure.
+8.  **NO DIALOGUE FOR OTHERS**: You can ONLY write dialogue for yourself, {character_name}. You can describe what other characters did or said based on the `[USER'S ACTION]`, but you are strictly forbidden from inventing new dialogue for them.
+
+*** EXAMPLE ***
+- LAST TURN'S CHRONICLE: I saw him walk into the room.
+- USER'S ACTION: I walk over and touch your shoulder.
+- COMPLETED ACTIONS: Sveta: turn my head and look at Misha
+- MOTIVATION: His touch startled me.
+- YOUR OUTPUT: He walked right up to me and gently touched my shoulder. I jumped slightly, startled by the unexpected contact, and turned my head to look at him. "Yes?" I asked, my voice a little breathless.
+"""
+
+    def __init__(
+        self,
+        client: OpenAI,
+        ai_character_name: str,
+        user_character_name: str,
+        log_func,
+    ):
+        self.client = client
+        self.ai_character_name = ai_character_name
+        self.user_character_name = user_character_name
+        self.log_func = log_func
+
+    def write_story(
+        self,
+        completed_actions,
+        motivation,
+        current_state_dict,
+        user_input,
+        last_turn_chronicle,
+        revision_feedback=None,
+    ):
+        """
+        Writes the artistic part of the turn. Can accept feedback for revisions.
+        """
+        current_state_str = json.dumps(current_state_dict, indent=2, ensure_ascii=False)
+        actions_str = "\n".join(completed_actions)
+
+        revision_section = ""
+        if revision_feedback:
+            revision_section = f"""
+[REVISION INSTRUCTIONS]
+Your previous story was rejected. You MUST rewrite it to fix the following error.
+REASON: {revision_feedback}
+"""
+        agent_name = "AGENT 4: STORY WRITER (CHRONICLE-CONTEXT)"
+        if revision_feedback:
+            agent_name += " (REVISION)"
+
+        prompt = f"""
+{revision_section}
+[LAST TURN'S CHRONICLE]
+{last_turn_chronicle}
+
+[CURRENT JSON]
+{current_state_str}
+
+[USER'S ACTION]
+{user_input}
+
+[MOTIVATION FOR THE ACTIONS]
+{motivation}
+
+[COMPLETED ACTIONS] (Your script to follow)
+{actions_str}
+
+[YOUR TASK]
+Write a narrative story segment that smoothly continues from the last turn's chronicle. Describe your character performing all actions from the script as a reaction to the user's action. Enrich the description with atmospheric details, but do not add new significant physical actions.
+"""
+        self.log_func("AGENT_PROMPT", prompt, agent_name)
+
+        response = (
+            self.client.chat.completions.create(
+                model="local-model",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": self.SYSTEM_PROMPT.format(
+                            character_name=self.ai_character_name,
+                            user_character_name=self.user_character_name,
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.8,
+                extra_body={"repetition_penalty": 1.1},
+            )
+            .choices[0]
+            .message.content.strip()
+        )
+
+        self.log_func("AGENT_RESPONSE", response, agent_name)
+        return response
+
+
+==================================================
+FILE: agents\translator_agent.py
+==================================================
+# translator_agent.py
+from openai import OpenAI
+
+
+class TranslatorAgent:
+    """
+    Агент, отвечающий за перевод текста с английского на русский.
+    """
+
+    SYSTEM_PROMPT = """
+You are an expert English-to-Russian translator. Your task is to translate the user's text.
+*** CRITICAL RULES ***
+1.  Your primary function is to translate English text to Russian.
+2.  If the provided text is already in Russian, you MUST return it unchanged.
+3.  Preserve the original meaning, tone, and formatting (like newlines) as much as possible.
+4.  Your output MUST be ONLY the translated text. Do not add any extra comments, greetings, or explanations like "Вот перевод:" or "Этот текст уже на русском:".
+"""
+
+    def __init__(self, client: OpenAI, log_func):
+        self.client = client
+        self.log_func = log_func
+
+    def translate(self, text_to_translate: str):
+        """
+        Переводит предоставленный текст с английского на русский.
+        Если текст уже на русском, возвращает его без изменений.
+        """
+        if not isinstance(text_to_translate, str) or not text_to_translate.strip():
+            return text_to_translate
+
+        # We don't log translation prompts to avoid cluttering the main log.txt
+        # If needed for debugging, the following line can be uncommented:
+        # self.log_func("AGENT_PROMPT", text_to_translate, "TRANSLATOR AGENT")
+
+        try:
+            response = self.client.chat.completions.create(
+                model="local-model",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": self.SYSTEM_PROMPT,
+                    },
+                    {"role": "user", "content": text_to_translate},
+                ],
+                temperature=0.1,
+            )
+
+            translated_text = response.choices[0].message.content.strip()
+            # self.log_func("AGENT_RESPONSE", translated_text, "TRANSLATOR AGENT")
+            return translated_text
+        except Exception as e:
+            self.log_func("SYSTEM", f"Error during translation: {e}")
+            return text_to_translate
+
+
+==================================================
+FILE: agents\world_descriptor_agent.py
+==================================================
+# world_descriptor_agent.py
+import json
+from openai import OpenAI
+
+
+class WorldDescriptorAgent:
+    """
+    Агент, ответственный за преобразование state.json в ПОДРОБНОЕ текстовое описание.
+    """
+
+    SYSTEM_PROMPT = """
+You are a Game Master's assistant. Your task is to read a JSON object representing the game's state and write a detailed, factual, human-readable summary of it.
+
+*** CRITICAL RULES ***
+1.  **Be Factual and Detailed:** Only state what is present in the JSON.
+2.  **Natural Language:** Translate complex objects into simple sentences.
+3.  **Structure:**
+    - Start with the scene description.
+    - For each character, create a small paragraph describing them.
+    - **CRITICAL FORMATTING:** After the description, you MUST use these exact headings to list items:
+        - `Wearing:` (for the `clothing` object, preserving categories like torso, legs)
+        - `Holding:` (for the `holding` list)
+    This separation is vital for other AI agents to understand the state correctly.
+
+*** OUTPUT FORMAT ***
+Your response MUST be ONLY the plain text description. Do not add titles or tags.
+
+**Example Output:**
+The scene is set in an apartment...
+
+Sveta Musina is a woman with long dark hair. Her son is Misha Musin. She is currently standing by the sofa.
+Wearing:
+- torso: T-shirt
+- legs: pants
+Holding:
+- smartphone
+"""
+
+    def __init__(self, client: OpenAI, log_func):
+        self.client = client
+        self.log_func = log_func
+
+    def describe(self, current_state_dict):
+        """
+        Генерирует текстовое описание мира из JSON.
+        """
+        current_state_str = json.dumps(current_state_dict, indent=2, ensure_ascii=False)
+        agent_name = "AGENT 0: WORLD DESCRIPTOR (CLARITY FIX)"
+        prompt = f"""
+[CURRENT JSON STATE]
+{current_state_str}
+
+[YOUR TASK]
+Translate the JSON state above into a detailed text description. You MUST use the `Wearing:` and `Holding:` headings to clearly separate clothing from held items.
+"""
+        self.log_func("AGENT_PROMPT", prompt, agent_name)
+
+        response = (
+            self.client.chat.completions.create(
+                model="local-model",
+                messages=[
+                    {"role": "system", "content": self.SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.0,
+            )
+            .choices[0]
+            .message.content.strip()
+        )
+
+        self.log_func("AGENT_RESPONSE", response, agent_name)
+        return response
+
+
+==================================================
+FILE: agents\__init__.py
+==================================================
+# agents/__init__.py
+from .action_consequence_agent import ActionConsequenceAgent
+from .action_selector_agent import ActionSelectorAgent
+from .motivation_generator_agent import MotivationGeneratorAgent
+from .story_verifier_agent import StoryVerifierAgent
+from .story_writer_agent import StoryWriterAgent
+from .translator_agent import TranslatorAgent
+from .world_descriptor_agent import WorldDescriptorAgent
+
+
+==================================================
+FILE: Launcher\App.xaml
+==================================================
+﻿<Application x:Class="Launcher.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Launcher"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+         
+    </Application.Resources>
+</Application>
+
+
+==================================================
+FILE: Launcher\App.xaml.cs
+==================================================
+﻿using System.Configuration;
+using System.Data;
+using System.Windows;
+
+namespace Launcher
+{
+    /// <summary>
+    /// Interaction logic for App.xaml
+    /// </summary>
+    public partial class App : Application
+    {
+    }
+
+}
+
+
+==================================================
+FILE: Launcher\AssemblyInfo.cs
+==================================================
+using System.Windows;
+
+[assembly: ThemeInfo(
+    ResourceDictionaryLocation.None,            //where theme specific resource dictionaries are located
+                                                //(used if a resource is not found in the page,
+                                                // or application resource dictionaries)
+    ResourceDictionaryLocation.SourceAssembly   //where the generic resource dictionary is located
+                                                //(used if a resource is not found in the page,
+                                                // app, or any theme specific resource dictionaries)
+)]
+
+
+==================================================
+FILE: Launcher\Launcher.csproj
+==================================================
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+</Project>
+
+
+==================================================
+FILE: Launcher\Launcher.slnx
+==================================================
+<Solution>
+  <Project Path="Launcher.csproj" />
+</Solution>
+
+
+==================================================
+FILE: Launcher\MainWindow.xaml
+==================================================
+﻿<Window x:Class="Launcher.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Role-Play Game Launcher" Height="600" Width="900">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBox x:Name="LogTextBox" Grid.Row="0" 
+                 IsReadOnly="True" VerticalScrollBarVisibility="Auto" 
+                 TextWrapping="Wrap" Background="#1E1E1E" Foreground="White" 
+                 FontFamily="Consolas" FontSize="12"/>
+
+        <DockPanel Grid.Row="1" Margin="0,10,0,0">
+            <Button x:Name="SendButton" Content="Send" Width="80" 
+                    DockPanel.Dock="Right" Click="SendButton_Click" IsDefault="True"/>
+            <TextBox x:Name="UserInputTextBox" Margin="0,0,10,0"/>
+        </DockPanel>
+    </Grid>
+</Window>
+
+==================================================
+FILE: Launcher\MainWindow.xaml.cs
+==================================================
+﻿using System.Diagnostics;
+using System.IO;
+using System.Text;
+using System.Windows;
+
+namespace Launcher
+{
+    public partial class MainWindow : Window
+    {
+        private Process? _pythonProcess;
+        private StreamWriter? _processInput;
+
+        public MainWindow()
+        {
+            InitializeComponent();
+            StartPythonGame();
+        }
+
+        private void StartPythonGame()
+        {
+            string projectRoot = @"D:\Repositories\Role-Play-Agents";
+
+            _pythonProcess = new Process();
+            _pythonProcess.StartInfo.FileName = "python";
+            _pythonProcess.StartInfo.Arguments = "-u \"main.py\""; // Теперь можно указывать просто имя файла
+
+            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ:
+            _pythonProcess.StartInfo.WorkingDirectory = projectRoot;
+
+            _pythonProcess.StartInfo.UseShellExecute = false;
+            _pythonProcess.StartInfo.RedirectStandardOutput = true;
+            _pythonProcess.StartInfo.RedirectStandardInput = true;
+            _pythonProcess.StartInfo.RedirectStandardError = true;
+            _pythonProcess.StartInfo.CreateNoWindow = true;
+
+            _pythonProcess.OutputDataReceived += (s, e) => AppendLog(e.Data);
+            _pythonProcess.ErrorDataReceived += (s, e) => AppendLog("[ERROR] " + e.Data);
+
+            _pythonProcess.Start();
+            _processInput = _pythonProcess.StandardInput;
+
+            _pythonProcess.BeginOutputReadLine();
+            _pythonProcess.BeginErrorReadLine();
+        }
+
+        private void AppendLog(string? text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+
+            // Вывод в UI поток
+            Dispatcher.Invoke(() =>
+            {
+                LogTextBox.AppendText(text + Environment.NewLine);
+                LogTextBox.ScrollToEnd();
+            });
+        }
+
+        private void SendButton_Click(object sender, RoutedEventArgs e)
+        {
+            string input = UserInputTextBox.Text;
+            if (!string.IsNullOrEmpty(input) && _processInput != null)
+            {
+                _processInput.WriteLine(input); // Отправка в Python (input())
+                AppendLog($"> {input}");        // Дублирование в лог
+                UserInputTextBox.Clear();
+            }
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            if (_pythonProcess != null && !_pythonProcess.HasExited)
+            {
+                _pythonProcess.Kill(); // Завершаем процесс при закрытии окна
+            }
+            base.OnClosed(e);
+        }
+    }
+}
+
+==================================================
+FILE: modules\chronology_manager.py
+==================================================
+# modules/chronology_manager.py
+import os
+
+CHRONOLOGY_FILE = "chronology.txt"
+
+
+def read_chronology():
+    """Читает хронологию событий из файла."""
+    if not os.path.exists(CHRONOLOGY_FILE):
+        return ""
+    with open(CHRONOLOGY_FILE, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def add_to_chronology(event):
+    """Добавляет новое событие в файл хронологии."""
+    with open(CHRONOLOGY_FILE, "a", encoding="utf-8") as f:
+        f.write(event + "\n")
+
+
+def overwrite_chronology(text):
+    """Перезаписывает весь файл хронологии новым текстом."""
+    with open(CHRONOLOGY_FILE, "w", encoding="utf-8") as f:
+        f.write(text.strip() + "\n")
+
+
+==================================================
+FILE: modules\game_utils.py
+==================================================
+# modules/game_utils.py
+import json
+import copy
+
+
+def log_event(event_type, content, title=""):
+    """
+    Logs various types of events to the console and log.txt.
+    - event_type: 'SYSTEM', 'USER_INPUT', 'AGENT_PROMPT', 'AGENT_RESPONSE', 'FINAL_OUTPUT', 'CHRONICLER_SUMMARY'
+    - content: The text content to log.
+    - title: An optional title, useful for agent prompts.
+    """
+    log_message = ""
+    console_message = ""
+
+    if event_type == "SYSTEM":
+        log_message = f"[SYSTEM] {content}"
+        console_message = log_message
+    elif event_type == "USER_INPUT":
+        log_message = f"\n[USER INPUT] {content}"
+        # User input is printed by the input() function itself, so no console_message here.
+    elif event_type == "AGENT_PROMPT":
+        log_message = (
+            f"\n--- PROMPT FOR: {title} ---\n\n{content.strip()}\n\n{'='*80}\n"
+        )
+        # Prompts are not printed to the console to reduce clutter.
+    elif event_type == "AGENT_RESPONSE":
+        log_message = f"\n--- RESPONSE FROM: {title} ---\n\n{content}\n\n{'='*80}\n"
+    else:
+        log_message = f"\n[{event_type.upper()}] {content}"
+        console_message = content  # For FINAL_OUTPUT etc.
+
+    if console_message:
+        print(console_message)
+
+    with open("log.txt", "a", encoding="utf-8") as f:
+        f.write(log_message + "\n")
+
+
+def save_changes_for_review(title, content, translator_agent):
+    """Переводит и сохраняет данные для анализа."""
+    translated_title = translator_agent.translate(title)
+    if isinstance(content, list):
+        content = "\n".join(content)
+    if not isinstance(content, str):
+        content = str(content)
+    translated_content = translator_agent.translate(content)
+
+    with open("review_changes.txt", "a", encoding="utf-8") as f:
+        f.write(f"--- {translated_title} ---\n{translated_content.strip()}\n\n")
+
+
+def get_scene_context(state_dict):
+    """Создает текстовое описание сцены."""
+    scene_info = state_dict.get("scene", {})
+    objects_list = [
+        f"{obj['name']} ({obj['location']})"
+        for obj in scene_info.get("interactive_objects", [])
+    ]
+    objects = ", ".join(objects_list) if objects_list else "none"
+    return f"Location: {scene_info.get('location', 'N/A')} ({scene_info.get('time', 'N/A')}). {scene_info.get('description', 'N/A')}. Interactive objects: {objects}."
+
+
+def get_characters_snapshot(state_dict):
+    """Создает текстовое описание персонажей."""
+    character_texts = []
+    for name, char_data in state_dict.get("characters", {}).items():
+        holding = (
+            ", ".join(char_data.get("holding", []))
+            if char_data.get("holding")
+            else "nothing"
+        )
+        character_texts.append(
+            f"Character {name} is currently: {char_data.get('current_action', 'N/A')}; "
+            f"emotion: {char_data.get('current_emotion', 'N/A')}; holding: {holding}."
+        )
+    return "\n".join(character_texts)
+
+
+def clear_session_files():
+    """Очищает файлы логов и результатов перед новым запуском."""
+    open("log.txt", "w").close()
+    open("review_changes.txt", "w").close()
+    open("chronology.txt", "w").close()
+
+
+def deep_merge_dicts(source, destination):
+    """
+    Рекурсивно сливает словарь `source` в `destination`.
+    Если ключ в `source` имеет значение, оно перезаписывает значение в `destination`.
+    Это идеально подходит для обновления состояния по частичному JSON.
+    """
+    dest_copy = copy.deepcopy(destination)
+    for key, value in source.items():
+        if (
+            isinstance(value, dict)
+            and key in dest_copy
+            and isinstance(dest_copy[key], dict)
+        ):
+            dest_copy[key] = deep_merge_dicts(value, dest_copy[key])
+        else:
+            dest_copy[key] = value
+    return dest_copy
+
+
+==================================================
+FILE: modules\state_manager.py
+==================================================
+# modules/state_manager.py
+import json
+import traceback
+
+
+def read_state(log_func):
+    """Читает состояние из state.json."""
+    try:
+        with open("state.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        log_func(f"[SYSTEM: Error! 'state.json' is missing or corrupted. Error: {e}]")
+        return None
+
+
+def save_state(new_state_dict, log_func):
+    """Сохраняет новое состояние в state.json."""
+    try:
+        log_func("[SYSTEM: Saving new state to state.json...]")
+        with open("state.json", "w", encoding="utf-8") as f:
+            json.dump(new_state_dict, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        log_func(f"\n[SYSTEM: Error! Failed to save new state. Error: {e}]")
+        traceback.print_exc()
+        return False
+
+
+==================================================
+FILE: modules\turn_processors.py
+==================================================
+# modules/turn_processors.py
+from .chronology_manager import read_chronology, overwrite_chronology
+
+# Системный промпт для Chronicler (взят из исходного файла)
+SYSTEM_PROMPT_CHRONICLER = """
+You are a historian and archivist. Your task is to write a brief, factual, third-person narrative summary of a single game turn based on the actions of two characters.
+*** CRITICAL RULES ***
+1.  **INPUT**: You will receive the action of the user's character and the resulting action of the AI's character.
+2.  **OUTPUT**: Your response MUST be a single, concise paragraph.
+3.  **PERSPECTIVE**: The summary MUST be in the third-person.
+4.  **NO TAGS**: Do not include any tags like [STORY], [MOTIVATION], or character names as headers.
+5.  **COMBINE ACTIONS**: Do not just list the actions. Weave them into a single, coherent narrative describing what just happened.
+6.  **BE OBJECTIVE**: Only record what happened. Do not include internal thoughts, motivations, or intentions unless they were explicitly stated as dialogue or action.
+"""
+
+# Системный промпт для Summarizer (ПОЛНАЯ ВЕРСИЯ)
+SYSTEM_PROMPT_SUMMARIZER = """
+You are a scriptwriter and editor. Your task is to take a raw game log, which includes character thoughts, actions, and dialogues, and rewrite it into a concise, third-person narrative story.
+*** CRITICAL RULES ***
+1.  **PRESERVE THE STORY**: The core events, actions, and the order in which they happen MUST be preserved. Do not change the plot or the meaning of the characters' actions.
+2.  **REMOVE ALL TAGS**: You MUST remove all special tags like `[MOTIVATION]`, `[STORY]`, `[action]`, `[replica]`, `SUMMARY:`, and character name headers (e.g., `SVETA MUSINA:`).
+3.  **CREATE A NARRATIVE**: Convert the log into a flowing, readable story. Integrate actions and dialogue naturally. For example, instead of `[replica] I see your panties`, write `Misha said, "I see your panties."`.
+4.  **THIRD-PERSON PERSPECTIVE**: The entire story must be told from a third-person point of view.
+5.  **BE CONCISE**: The final text must be significantly shorter than the original, but without losing critical details of what happened. Remove repetitive internal thoughts if they don't add new information to the scene.
+Your response must contain ONLY the rewritten story. Do not add any extra comments, titles, or tags.
+"""
+
+
+def create_turn_summary(
+    client, user_char_name, user_action, ai_char_name, ai_story_part, ai_motivation
+):
+    """Создает краткую сводку хода для записи в хронологию."""
+    cleaned_ai_story = ai_story_part.replace("[STORY]", "").strip()
+    prompt = f"""
+Here are the actions and motivations for the turn.
+Create a concise, third-person narrative summary.
+
+- User Character ({user_char_name}) Action: "{user_action}"
+- AI Character ({ai_char_name}) Motivation: "{ai_motivation}"
+- AI Character ({ai_char_name}) Resulting Story: "{cleaned_ai_story}"
+"""
+    completion = client.chat.completions.create(
+        model="local-model",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT_CHRONICLER},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.2,
+    )
+    return completion.choices[0].message.content.strip()
+
+
+def summarize_chronology_if_needed(client, word_limit=6000):
+    """Проверяет длину хронологии и запускает сжатие, если она превышает лимит."""
+    chronology_text = read_chronology()
+    word_count = len(chronology_text.split())
+
+    if word_count > word_limit:
+        print(
+            f"[SYSTEM: Chronology word count ({word_count}) exceeds limit ({word_limit}). Summarizing...]"
+        )
+        completion = client.chat.completions.create(
+            model="local-model",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT_SUMMARIZER},
+                {"role": "user", "content": chronology_text},
+            ],
+            temperature=0.3,
+        )
+        summary_text = completion.choices[0].message.content.strip()
+        overwrite_chronology(summary_text)
+        print("[SYSTEM: Chronology has been successfully summarized and updated.]")
+
+
+==================================================
+FILE: modules\__init__.py
+==================================================
+
+

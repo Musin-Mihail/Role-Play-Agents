@@ -94,7 +94,8 @@ def main():
     while True:
         try:
             summarize_chronology_if_needed(client)
-            user_input = input(f"\nYour turn ({user_character_name}) > ").strip()
+            print(f"\nYour turn ({user_character_name}) > ")
+            user_input = input().strip()
             log_event("USER_INPUT", user_input)
             if user_input.lower() == "exit":
                 break
