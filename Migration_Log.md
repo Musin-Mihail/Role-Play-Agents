@@ -66,3 +66,24 @@
 ### Предложение ИИ для следующего этапа:
 
 - Следующим шагом логично будет реализовать **Data Layer**: создать Pydantic-модели, отражающие структуру `state.json` и DTO для взаимодействия с API. Это необходимо перед переносом логики сервисов.
+
+### Этап 2: Data Layer Implementation
+
+### Действия ИИ:
+
+- Создан модуль `backend/app/models/`.
+- Реализована Pydantic-модель `GameState` (и вложенные `Character`, `Scene`, `Clothing`, etc.) для строгой типизации файла `state.json`.
+- Реализованы DTO модели `TurnRequest` и `TurnResponse` для будущего API интерфейса.
+- Проведена валидация существующего `state.json` через новые модели — структура данных подтверждена.
+
+### Предложенные изменения/артефакты:
+
+- Файл: `backend/app/models/game_state.py`
+- Файл: `backend/app/models/api_dtos.py`
+- Файл: `backend/app/models/__init__.py`
+
+### Предложение ИИ для следующего этапа:
+
+- Следующим шагом (Этап 3) необходимо перенести **Core Services (Infrastructure)**.
+- Нужно мигрировать утилиты `read_state`/`save_state` (из `state_manager.py`) в сервис, использующий новые Pydantic-модели.
+- Также нужно адаптировать `TranslatorAgent` под внедрение зависимостей (Dependency Injection), чтобы избавиться от глобальной инициализации OpenAI клиента.
