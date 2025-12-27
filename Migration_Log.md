@@ -15,7 +15,7 @@
     - Инициализация проекта (.NET 9 WPF).
     - Подключение `CommunityToolkit.Mvvm`, `Microsoft.Extensions.Hosting`, `Microsoft.Extensions.Http`.
     - Настройка `appsettings.json` (Base URL).
-    - Создание C# DTO моделей (полное зеркалирование Python моделей, snake_case -> PascalCase).
+    - Создание C# DTO моделей (полное зеркалирование Python моделей, snake_case -> PascalCase, Records).
     - Реализация `GameApiService` (IHttpClientFactory).
     - Настройка DI в `App.xaml.cs`.
 2.  **MVVM Core & Basic UI:**
@@ -34,14 +34,17 @@
 
 ### Предложение ИИ для следующего этапа (Этап 1):
 
-**Цель:** Инициализация проекта и слой данных.
+**Цель:** Инициализация проекта, инфраструктура DI и слой данных (API + Models).
 
 - **Создать проект:** `dotnet new wpf -n RolePlayClient`.
 - **Добавить пакеты:**
   - `CommunityToolkit.Mvvm`
   - `Microsoft.Extensions.Hosting`
   - `Microsoft.Extensions.Http`
-- **Создать структуру:** `Models/`, `Services/`, `ViewModels/`, `Views/`.
-- **Реализовать Models:** Создать `record` классы для `TurnRequest`, `TurnResponse`, `GameState` (и всех вложенных типов).
-- **Реализовать Service:** Класс `GameApiService` с настройкой `JsonNamingPolicy.SnakeCaseLower` и `JsonStringEnumConverter`.
-- **Настроить App.xaml.cs:** Внедрение зависимостей (DI) и чтение конфигурации.
+- **Создать структуру:** `Models/`, `Services/` (папки `ViewModels` и `Views` создадим на следующем этапе).
+- **Реализовать Models (DTO):** Создать `public record class` для:
+  - `TurnRequest`, `TurnResponse`.
+  - `GameState`, `Character`, `Scene`, `InteractiveObject`, `Clothing`.
+  - Учесть Nullable типы (`string?`, `List<string>?`) для корректной десериализации.
+- **Реализовать Service:** Класс `GameApiService` (и интерфейс `IGameApiService`) с настройкой `JsonNamingPolicy.SnakeCaseLower` и `JsonStringEnumConverter`.
+- **Настроить App.xaml.cs:** Внедрение зависимостей (DI), регистрация `HttpClient` и чтение конфигурации из `appsettings.json`.
