@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RolePlayClient.Services;
+using RolePlayClient.ViewModels;
 
 namespace RolePlayClient;
 
@@ -29,18 +30,23 @@ public partial class App : Application
             .ConfigureServices(
                 (context, services) =>
                 {
-                    // Чтение URL из конфига
+                    // --- Configuration ---
                     string baseUrl =
                         context.Configuration["GameApi:BaseUrl"] ?? "http://localhost:8000";
 
-                    // Регистрация HttpClient с BaseAddress
+                    // --- Services ---
                     services.AddHttpClient<IGameApiService, GameApiService>(client =>
                     {
                         client.BaseAddress = new Uri(baseUrl);
-                        client.Timeout = TimeSpan.FromSeconds(30); // Тайм-аут для LLM генерации
+                        client.Timeout = TimeSpan.FromSeconds(60); // Увеличиваем тайм-аут для генерации LLM
                     });
 
-                    // Здесь в будущем будем регистрировать ViewModels и Views
+                    // --- ViewModels ---
+                    services.AddSingleton<MainViewModel>();
+
+                    // --- Windows ---
+                    // Регистрируем MainWindow, чтобы DI мог внедрить в него MainViewModel
+                    services.AddSingleton<MainWindow>();
                 }
             )
             .Build();
@@ -48,11 +54,12 @@ public partial class App : Application
         await _host.StartAsync();
 
         // 2. Временная проверка связи (Sanity Check)
-        await TestConnectionAsync();
+        // Можно оставить или убрать, так как теперь у нас есть UI для проверки
+        // await TestConnectionAsync();
 
-        // Открытие главного окна (пока пустого)
-        MainWindow = new MainWindow();
-        MainWindow.Show();
+        // 3. Запуск Главного Окна через DI
+        var mainWindow = _host.Services.GetRequiredService<MainWindow>();
+        mainWindow.Show();
     }
 
     private async Task TestConnectionAsync()
@@ -63,25 +70,17 @@ public partial class App : Application
         using var scope = _host.Services.CreateScope();
         var apiService = scope.ServiceProvider.GetRequiredService<IGameApiService>();
 
-        // Временно используем MessageBox, чтобы точно увидеть результат на экране
         try
         {
+            // Просто пишем в Debug, чтобы не блокировать запуск UI лишними окнами
             bool isConnected = await apiService.CheckHealthAsync();
-            if (isConnected)
-            {
-                MessageBox.Show("✅ SUCCESS: Connected to Backend!", "Connection Test");
-            }
-            else
-            {
-                MessageBox.Show(
-                    "❌ FAILURE: Backend not reachable.\nCheck if python run.py is running.",
-                    "Connection Test"
-                );
-            }
+            System.Diagnostics.Debug.WriteLine(
+                isConnected ? "✅ Connection Test Passed" : "❌ Connection Test Failed"
+            );
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"❌ ERROR: {ex.Message}", "Connection Test");
+            System.Diagnostics.Debug.WriteLine($"❌ Connection Error: {ex.Message}");
         }
     }
 

@@ -56,8 +56,10 @@ IGNORE_FILES = {
     ".gitignore",
     "package-lock.json",
     "yarn.lock",
-    "Master_Prompt.md",
-    "Migration_Log.md",
+    "Master_Prompt_Phase1.md",
+    "Migration_Log_Phase1.md",
+    "Master_Prompt_Phase2.md",
+    "Migration_Log_Phase2.md",
 }
 
 
