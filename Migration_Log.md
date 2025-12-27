@@ -87,3 +87,24 @@
 - Следующим шагом (Этап 3) необходимо перенести **Core Services (Infrastructure)**.
 - Нужно мигрировать утилиты `read_state`/`save_state` (из `state_manager.py`) в сервис, использующий новые Pydantic-модели.
 - Также нужно адаптировать `TranslatorAgent` под внедрение зависимостей (Dependency Injection), чтобы избавиться от глобальной инициализации OpenAI клиента.
+
+### Этап 3: Core Migration (Part 1 - Infrastructure)
+
+### Действия ИИ:
+
+- Создана директория `backend/app/services`.
+- Реализован `backend/app/core/deps.py` для Dependency Injection (предоставление OpenAI клиента).
+- Реализован `GameStateService` (`backend/app/services/state_service.py`) — сервис для Stateless-работы с `state.json` с использованием Pydantic-моделей. Заменяет старый `state_manager.py`.
+- Реализован `TranslatorService` (`backend/app/services/translator_service.py`) — сервис перевода, отвязанный от глобальных переменных и использующий DI. Заменяет `TranslatorAgent`.
+- Написан скрипт `test_step_3.py` для проверки инфраструктурного слоя.
+
+### Предложенные изменения/артефакты:
+
+- Файл: `backend/app/core/deps.py`
+- Файл: `backend/app/services/state_service.py`
+- Файл: `backend/app/services/translator_service.py`
+- Файл: `backend/app/services/__init__.py`
+
+### Предложение ИИ для следующего этапа:
+
+- Следующим шагом (Этап 4) необходимо выполнить **Core Migration (Part 2 - Logic Agents)**. Нужно рефакторить "интеллектуальных" агентов (`ActionSelector`, `MotivationGenerator`, `ActionConsequence`, `StoryWriter`, `StoryVerifier`) в Stateless-сервисы. Они должны перестать использовать `print`/`log_func` и начать возвращать типизированные данные (или словари), принимая зависимости через конструктор.
