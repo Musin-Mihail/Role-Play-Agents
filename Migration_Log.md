@@ -157,3 +157,26 @@
 - Создать роутер `backend/app/api/endpoints/game.py`.
 - Реализовать эндпоинт `POST /game/turn`, который будет принимать `TurnRequest`, вызывать `GameEngineService` и возвращать `TurnResponse`.
 - Подключить роутер к основному приложению в `main.py`.
+
+### Этап 6: API Layer Implementation
+
+### Действия ИИ:
+
+- Создана структура директорий `backend/app/api/endpoints`.
+- Реализован роутер `backend/app/api/endpoints/game.py` с эндпоинтом `POST /turn`.
+  - Эндпоинт принимает `TurnRequest`, использует DI для получения `GameEngineService` и возвращает `TurnResponse`.
+  - Реализована обработка ошибок (404, 500) и логирование.
+- Создан агрегатор роутеров `backend/app/api/api.py`.
+- Обновлен `backend/app/main.py`: подключен `api_router` с префиксом API из настроек.
+- Написан интеграционный тест `test_step_6.py` с использованием `TestClient`, проверяющий работу всего пайплайна через HTTP-интерфейс.
+
+### Предложенные изменения/артефакты:
+
+- Файл: `backend/app/api/endpoints/game.py`
+- Файл: `backend/app/api/api.py`
+- Файл: `backend/app/main.py`
+- Тест: `test_step_6.py`
+
+### Предложение ИИ для следующего этапа:
+
+- Основная миграция завершена. Следующим шагом (Этап 7: Cleanup) необходимо удалить старые файлы (`main.py` в корне, `agents/`, `modules/`, старые тесты) и консольный `Launcher`, чтобы оставить чистую архитектуру Backend API.
