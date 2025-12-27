@@ -11,26 +11,28 @@
 - **Endpoints:**
   - `POST /api/v1/game/turn`: Принимает JSON (user_input), возвращает JSON (story, updates).
   - `GET /health`: Проверка статуса.
-- **Models:** Структура данных описана в Pydantic-моделях бэкенда (см. `backend/app/models/`).
+- **Models:** Структура данных описана в Pydantic-моделях бэкенда (см. `backend/app/models/` в контексте).
+- **JSON Format:** Backend отдает поля в **snake_case** (напр. `user_character_name`), C# использует **PascalCase**.
 
 **ЦЕЛЬ ФАЗЫ 2:**
 Разработать WPF-приложение (Desktop), реализующее паттерн **MVVM**. Приложение должно быть красивым, отзывчивым и готовым к масштабированию.
 
 **ТЕХНОЛОГИЧЕСКИЙ СТЕК:**
 
-- **Language:** C# 14 (.NET 10).
-- **Framework:** WPF (Windows Presentation Foundation).
+- **Language:** C# (Latest Stable).
+- **Framework:** WPF (.NET 10 or latest available .NET Core).
 - **Pattern:** MVVM (Model-View-ViewModel).
-  - Используй `CommunityToolkit.Mvvm` (Modern standard) для чистоты кода (RelayCommand, ObservableProperty).
-- **Networking:** `HttpClient` + `System.Net.Http.Json`.
+  - Используй **CommunityToolkit.Mvvm** (Source Generators: `[ObservableProperty]`, `[RelayCommand]`).
+  - Используй **Dependency Injection** в `App.xaml.cs` для связывания Services и ViewModels.
+- **Networking:** `HttpClient`, `System.Net.Http.Json`.
 - **Serialization:** `System.Text.Json`.
 
 **CRITICAL CONSTRAINTS (АРХИТЕКТУРНЫЕ ОГРАНИЧЕНИЯ):**
 
-1.  **Strict MVVM:** Никакого бизнес-кода в `MainWindow.xaml.cs`. Вся логика — во ViewModels.
-2.  **Async/Await:** Все сетевые запросы строго асинхронны. UI не должен зависать.
-3.  **Typed Models:** C# классы (Records) должны зеркально отражать Python модели. Используй `record` для DTO, где это уместно.
-4.  **Target Framework:** Указывай `<TargetFramework>net10.0-windows</TargetFramework>` в csproj.
+1.  **JSON Handling:** Обязательно используй `JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower }` при настройке `HttpClient` или десериализации, чтобы C# модели (PascalCase) корректно читали Python JSON (snake_case).
+2.  **Strict MVVM:** Никакого бизнес-кода в `MainWindow.xaml.cs` (Code-behind). Вся логика — во ViewModels.
+3.  **Async/Await:** Все сетевые запросы строго асинхронны. UI не должен фризиться.
+4.  **Typed Models:** C# классы (`record`) должны зеркально отражать структуру данных Python.
 5.  **Full Code Only:** Всегда выдавай полный код файлов.
 
 **ТВОЙ ПЛАН ДЕЙСТВИЙ:**
@@ -45,30 +47,29 @@
 ## ЧАСТЬ 1: КОД (C# & XAML)
 
 **ПРАВИЛА:**
-
 - Указывай путь к файлу (например: `Client/Services/GameApiService.cs`).
-- Предоставляй ВЕСЬ код.
+- Включая `App.xaml.cs` с настройкой DI.
 
 ## ЧАСТЬ 2: ИНСТРУКЦИИ
 
-- Команды для терминала (dotnet new, dotnet add package).
+- Команды для терминала (создание проекта, добавление пакетов).
 
 ## ЧАСТЬ 3: ПРОВЕРКА
 
-- Критерии проверки работоспособности этапа.
+- Критерии проверки работоспособности (напр. "Запустите бэкенд, нажмите кнопку...").
 
 ## ЧАСТЬ 4: ЗАПИСЬ В ЖУРНАЛ (Migration_Log.md)
 
-### Этап X: {Название этапа}
+### Этап 1: Initialization & Data Layer
 
 ### Действия ИИ:
-
-- {Список}
+- Создан проект WPF.
+- Реализованы DTO модели (`Models/`).
+- Реализован `GameApiService`.
+- Настроен DI контейнер.
 
 ### Предложенные изменения/артефакты:
-
-- Файл: ...
+- Файл: `Client/Models/TurnRequest.cs`, `Client/Services/GameApiService.cs` ...
 
 ### Предложение ИИ для следующего этапа:
-
-- ...
+- Реализация UI Main Window и привязка ViewModel...

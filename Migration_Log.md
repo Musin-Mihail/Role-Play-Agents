@@ -1,4 +1,4 @@
-# Журнал разработки: Phase 2 - Desktop Client Implementation (WPF / .NET 10)
+# Журнал разработки: Phase 2 - Desktop Client Implementation (WPF / .NET)
 
 Этот документ описывает процесс создания клиента на C# WPF для Role-Play Engine API.
 
@@ -12,10 +12,11 @@
 ### Глобальный план (Roadmap Phase 2):
 
 1.  **Project Setup & Data Layer:**
-    - Инициализация проекта на .NET 10 (`net10.0-windows`).
-    - Подключение `CommunityToolkit.Mvvm`.
-    - Создание C# DTO моделей (`TurnRequest`, `TurnResponse`, `GameState`).
+    - Инициализация проекта.
+    - Подключение `CommunityToolkit.Mvvm` и `Microsoft.Extensions.DependencyInjection`.
+    - Создание C# DTO моделей (с учетом маппинга snake_case -> PascalCase).
     - Реализация `GameApiService` (HTTP Client).
+    - Настройка DI в `App.xaml.cs`.
 2.  **MVVM Core & Basic UI:**
     - Создание `MainViewModel`.
     - Верстка `MainWindow.xaml` (Grid layout, input area, output log).
@@ -34,10 +35,12 @@
 
 **Цель:** Инициализация проекта и слой данных.
 
-- **Создать проект:** `dotnet new wpf -n RolePlayClient -f net10.0-windows`.
-- **Добавить пакет:** `dotnet add package CommunityToolkit.Mvvm`.
+- **Создать проект:** `dotnet new wpf -n RolePlayClient`.
+- **Добавить пакеты:** - `CommunityToolkit.Mvvm`
+    - `Microsoft.Extensions.DependencyInjection`
 - **Создать структуру:** `Models/`, `Services/`, `ViewModels/`, `Views/`.
-- **Реализовать Models:** Создать `record` классы для `TurnRequest`, `TurnResponse`, `GameState` (зеркально Python-моделям).
-- **Реализовать Service:** Класс `GameApiService` для `POST /turn` и `GET /health`.
+- **Реализовать Models:** Создать `record` классы для `TurnRequest`, `TurnResponse`, `GameState`.
+- **Реализовать Service:** Класс `GameApiService` с настройкой `JsonNamingPolicy.SnakeCaseLower`.
+- **Настроить App.xaml.cs:** Внедрение зависимостей (DI) для сервисов и главного окна.
 
-_Использование .NET 10 и CommunityToolkit.Mvvm обеспечит максимально современный и чистый код._
+_Использование DI и CommunityToolkit обеспечит чистую архитектуру._
