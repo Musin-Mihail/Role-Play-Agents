@@ -11,40 +11,66 @@
 
 ### Глобальный план (Roadmap Phase 2):
 
-1.  **Project Setup & Data Layer:**
-    - Инициализация проекта (.NET 9 WPF).
+1.  **Initialization & Data Layer (Current):**
+    - Инициализация проекта (.NET 9 WPF) в папке `Client/`.
     - Подключение `CommunityToolkit.Mvvm`, `Microsoft.Extensions.Hosting`, `Microsoft.Extensions.Http`.
     - Настройка `appsettings.json` (Base URL).
     - Создание C# DTO моделей (полное зеркалирование Python моделей, snake_case -> PascalCase, Records).
-    - Реализация `GameApiService` (IHttpClientFactory).
-    - Настройка DI в `App.xaml.cs`.
+    - Реализация `GameApiService` с защитой от изменений API (`JsonUnmappedMemberHandling.Skip`).
+    - Настройка DI в `App.xaml.cs` и тест соединения.
 2.  **MVVM Core & Basic UI:**
     - Создание `MainViewModel`.
     - Верстка `MainWindow.xaml` (Grid layout, input area, output log).
     - Биндинг команд отправки сообщений.
 3.  **State Visualization:**
     - Визуализация боковой панели (Инвентарь, Характеристики).
-    - Конвертеры данных (например, `BoolToVisibilityConverter`).
+    - Конвертеры данных.
 4.  **UX Polish:**
-    - Стилизация компонентов (Resources/Styles).
-    - Авто-скролл лога сообщений.
-    - Обработка ошибок соединения (Retry policies).
+    - Стилизация компонентов.
+    - Авто-скролл лога.
 
 ---
 
-### Предложение ИИ для следующего этапа (Этап 1):
+### Текущий статус: 0 - Initiation
 
-**Цель:** Инициализация проекта, инфраструктура DI и слой данных (API + Models).
+Мы начинаем разработку клиента с нуля.
 
-- **Создать проект:** `dotnet new wpf -n RolePlayClient`.
-- **Добавить пакеты:**
-  - `CommunityToolkit.Mvvm`
-  - `Microsoft.Extensions.Hosting`
-  - `Microsoft.Extensions.Http`
-- **Создать структуру:** `Models/`, `Services/` (папки `ViewModels` и `Views` создадим на следующем этапе).
-- **Реализовать Models (DTO):** Создать `public record class` для:
-  - `TurnRequest`, `TurnResponse`.
-  - `GameState`, `Character`, `Scene`, `InteractiveObject`, `Clothing`.
-  - Учесть Nullable типы (`string?`, `List<string>?`) для корректной десериализации.
-- **Реализовать Service:** Класс `GameApiService` (и интерфейс `IGameApiService`) с настройкой `JsonNamingPolicy.SnakeCaseLower` и `JsonStringEnumConverter`.
-- **Настроить App.xaml.cs:** Внедрение зависимостей (DI), регистрация `HttpClient` и чтение конфигурации из `appsettings.json`.
+### Запрос к ИИ (Шаг 1):
+
+**Цель:** Инициализация инфраструктуры и создание слоя данных (API + Models), проверка связи с бэкендом.
+
+**Ожидаемые действия ИИ:**
+
+1.  Создать структуру папок `Client/`.
+2.  Сгенерировать DTO (`TurnRequest`, `TurnResponse`, `GameState` и вложенные объекты).
+3.  Реализовать `GameApiService` и интерфейс.
+4.  Настроить `App.xaml.cs` с DI и временной проверкой соединения (`/health`).
+
+**Предложенные изменения/артефакты:**
+
+- `Client/RolePlayClient.csproj`
+- `Client/appsettings.json`
+- `Client/Models/*.cs`
+- `Client/Services/GameApiService.cs`
+- `Client/App.xaml.cs`
+
+### Журнал изменений — Phase 2: Инициализация WPF Клиента
+
+**Действие:** Инициализирована структура проекта C# WPF и слой данных (Data Layer).
+
+**Детали:**
+
+1.  **Настройка проекта:** Создан проект `RolePlayClient` (.NET 9 WPF).
+2.  **Зависимости:** Добавлены пакеты `CommunityToolkit.Mvvm`, `Microsoft.Extensions.Hosting`, `Microsoft.Extensions.Http`, `Microsoft.Extensions.Configuration.Json`.
+3.  **Слой данных:**
+    - Созданы иммутабельные модели (Records) в папке `Models/`, полностью зеркалирующие структуру данных Python-бэкенда.
+    - Реализован сервис `GameApiService` через `IHttpClientFactory`.
+    - Настроена глобальная конфигурация `System.Text.Json`:
+      - Автоматический маппинг `snake_case` (API) ↔ `PascalCase` (C#).
+      - Включен `JsonUnmappedMemberHandling.Skip` для защиты клиента от падений при добавлении новых полей в API.
+4.  **Инфраструктура:**
+    - В `App.xaml.cs` настроен `Generic Host` и DI-контейнер.
+    - Реализована проверка соединения (`TestConnectionAsync`) при запуске приложения.
+
+**Текущий статус:** Шаг 1 (Инициализация) завершен.
+**Следующий шаг:** Phase 2, Шаг 2 — Реализация ядра MVVM и базового UI (MainViewModel, MainWindow).

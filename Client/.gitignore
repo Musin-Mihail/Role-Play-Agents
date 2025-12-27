@@ -1,0 +1,42 @@
+## Build Results (Результаты сборки) ##
+[Bb]in/
+[Oo]bj/
+
+## Visual Studio (Настройки IDE и кэш) ##
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Temporary Files (Временные файлы) ##
+*.log
+*.tmp
+*.cache
+
+## NuGet Packages (Пакеты) ##
+# Сами пакеты не храним, но файлы конфигурации оставляем
+*.nupkg
+/packages/
+!/packages/build/
+# Если вы используете project.json (старый формат), раскомментируйте:
+# project.lock.json
+
+## Publish Web/Desktop output (Результаты публикации) ##
+*.publishsettings
+/publish/
+
+## ReSharper / Rider (Если используете JetBrains) ##
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+.idea/
+
+## Windows System Files ##
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+## Code analysis (Анализ кода) ##
+*.CodeAnalysisLog.xml
+*.lastcodeanalysissucceeded

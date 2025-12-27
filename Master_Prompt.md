@@ -3,49 +3,54 @@
 Привет. Мы завершили разработку бэкенда на Python (FastAPI).
 Теперь ты выступаешь в роли **Senior C# / WPF Developer**.
 
-Твоя задача — создать профессиональный десктопный клиент для взаимодействия с нашим Role-Play API.
+Твоя задача — выполнить **Этап 1** создания профессионального десктопного клиента для нашего Role-Play API.
 
 **ТЕКУЩАЯ АРХИТЕКТУРА (BACKEND):**
 
 - **Framework:** FastAPI (запущен на `http://localhost:8000`).
 - **Endpoints:**
-  - `POST /api/v1/game/turn`: Принимает JSON (user_input), возвращает JSON (story, updates).
+  - `POST /api/v1/game/turn`: Принимает `TurnRequest`, возвращает `TurnResponse`.
   - `GET /health`: Проверка статуса.
-- **Models:** Структура данных описана в Pydantic-моделях бэкенда (см. `backend/app/models/` в контексте).
+- **Models:** Структура данных описана в Pydantic-моделях бэкенда.
 - **JSON Format:** Backend отдает поля в **snake_case** (напр. `user_character_name`), C# использует **PascalCase**. Вложенность JSON (Scene, Characters, Clothing) должна быть полностью соблюдена.
 
-**ЦЕЛЬ ФАЗЫ 2:**
-Разработать WPF-приложение (Desktop), реализующее паттерн **MVVM**. Приложение должно быть красивым, отзывчивым и готовым к масштабированию.
+**ЦЕЛЬ ЭТАПА 1 (Initialization & Data Layer):**
+Развернуть проект, настроить DI контейнер, HTTP-клиент и создать зеркальные C# DTO модели. Интерфейс (XAML) и ViewModels пока НЕ трогаем.
 
 **ТЕХНОЛОГИЧЕСКИЙ СТЕК:**
 
-- **Language:** C# (Latest Stable).
-- **Framework:** WPF (.NET 9).
-- **Pattern:** MVVM (Model-View-ViewModel).
-  - Используй **CommunityToolkit.Mvvm** (Source Generators: `[ObservableProperty]`, `[RelayCommand]`).
-  - Используй **Dependency Injection** (`Microsoft.Extensions.Hosting`) в `App.xaml.cs`.
-  - **Configuration:** Используй `appsettings.json` для хранения `BaseUrl`.
-- **Networking:** `HttpClient` (через `IHttpClientFactory`), `System.Net.Http.Json`.
-- **Serialization:** `System.Text.Json`.
+- **Language:** C# 12 / .NET 9.
+- **Project Type:** WPF Application.
+- **Libraries:**
+  - `CommunityToolkit.Mvvm` (подготовка для следующего этапа).
+  - `Microsoft.Extensions.Hosting` (DI Container).
+  - `Microsoft.Extensions.Http` (IHttpClientFactory).
+  - `Microsoft.Extensions.Configuration.Json` (appsettings).
 
 **CRITICAL CONSTRAINTS (АРХИТЕКТУРНЫЕ ОГРАНИЧЕНИЯ):**
 
-1.  **JSON Handling & Interop:**
-    - Обязательно используй `JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower }`.
-    - Добавь `Converters.Add(new JsonStringEnumConverter())`, так как Python может отдавать enum как строки.
-    - **Важно (Nullability):** Используй **Nullable Reference Types** (например, `string?`, `int?`). Поля, которые в Python моделях помечены как `Optional` или могут быть `None`, в C# DTO _обязательно_ должны быть nullable.
-2.  **Data Structures:**
-    - Для DTO моделей используй `public record class` (для иммутабельности).
-    - Структура классов должна зеркально отражать вложенность Python моделей (включая `Clothing`, `InteractiveObject`, `Character`).
-3.  **Strict MVVM:** Никакого бизнес-кода в `MainWindow.xaml.cs` (Code-behind). Вся логика — во ViewModels.
-4.  **Async/Await:** Все сетевые запросы строго асинхронны. UI не должен фризиться. Реализуй базовую обработку `HttpRequestException`.
-5.  **DI & Configuration:** `BaseUrl` должен читаться из `appsettings.json` и внедряться через `IOptions<AppConfig>` или конфигурироваться при регистрации `HttpClient`.
-6.  **Full Code Only:** Всегда выдавай полный код файлов.
+1.  **Project Structure:**
+    - Весь код клиента должен находиться в папке `Client/` (создай её в корне репозитория).
+    - Внутренняя структура: `Models/`, `Services/`, `Core/` (для конфигов).
+2.  **JSON Handling (System.Text.Json):**
+    - Обязательно используй `JsonSerializerOptions`:
+      - `PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower`.
+      - `Converters.Add(new JsonStringEnumConverter())` (Python может отдавать enum как строки).
+      - **ВАЖНО:** `UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip`. Клиент НЕ должен падать, если бэкенд пришлет новые поля, которых нет в C# модели.
+3.  **DTO Models (Records):**
+    - Используй `public record class` для иммутабельности.
+    - Структура классов должна зеркально отражать модели Python: `TurnRequest`, `TurnResponse`, `GameState`, `Scene`, `Character`, `InteractiveObject`, `Clothing`, `Relationship`.
+    - **Nullability:** Используй **Nullable Reference Types** (`string?`, `int?`). Поля, которые в Python `Optional` (особенно `TurnResponse.error_message` или списки), должны быть nullable.
+4.  **Networking:**
+    - Реализуй `GameApiService` через `HttpClient` (внедряемый через `IHttpClientFactory`).
+    - Base URL должен читаться из `appsettings.json` через `IConfiguration`.
+5.  **DI & Entry Point:**
+    - Настрой `Host.CreateDefaultBuilder` в `App.xaml.cs`.
 
 **ТВОЙ ПЛАН ДЕЙСТВИЙ:**
 
 1.  **Проанализируй** `Migration_Log.md` (Phase 2).
-2.  **Сгенерируй** ответ, сфокусированный на **Слое Данных (Models + Services)** и **Инфраструктуре**. Не пиши пока UI-код (XAML/ViewModels), это будет следующий шаг.
+2.  **Сгенерируй** ответ, сфокусированный на **Слое Данных (Models + Services)** и **Инфраструктуре**.
 
 **ФОРМАТ ОТВЕТА:**
 
@@ -55,34 +60,23 @@
 
 **ПРАВИЛА:**
 
-- Указывай путь к файлу (например: `Client/Services/GameApiService.cs`).
-- Включая `App.xaml.cs` с настройкой DI и `appsettings.json`.
+- Указывай полный путь к файлу (например: `Client/Models/GameState.cs`).
+- Включая `App.xaml.cs` с настройкой DI.
+- **Full Code Only:** Всегда выдавай полный код файлов.
 
 ## ЧАСТЬ 2: ИНСТРУКЦИИ
 
-- Команды для терминала (создание проекта, добавление пакетов).
-- Структура папок.
+- Команды для терминала (создание solution и project внутри папки `Client`).
+- Итоговая структура папок.
 
-## ЧАСТЬ 3: ПРОВЕРКА
+## ЧАСТЬ 3: ПРОВЕРКА (Sanity Check)
 
-- Критерии проверки работоспособности (напр. "Запустите бэкенд, проверьте, что данные десериализуются без ошибок...").
+- Добавь в `App.xaml.cs` временный метод `private async Task TestConnectionAsync()`, который при запуске приложения (в `OnStartup`):
+  1. Запросит сервис `IGameApiService`.
+  2. Сделает запрос к `GET /health`.
+  3. Выведет результат (успех или ошибку) в `System.Diagnostics.Debug.WriteLine`.
+- Это нужно, чтобы мы убедились, что DI и Сеть работают, еще до создания UI.
 
 ## ЧАСТЬ 4: ЗАПИСЬ В ЖУРНАЛ (Migration_Log.md)
 
-### Этап 1: Initialization & Data Layer
-
-### Действия ИИ:
-
-- Создан проект WPF.
-- Добавлен `appsettings.json`.
-- Реализованы полные DTO модели (`Models/`).
-- Реализован `GameApiService` с поддержкой SnakeCase и обработкой ошибок.
-- Настроен DI контейнер в `App.xaml.cs`.
-
-### Предложенные изменения/артефакты:
-
-- Файл: `Client/Models/TurnRequest.cs`, `Client/Services/GameApiService.cs`, `Client/appsettings.json` ...
-
-### Предложение ИИ для следующего этапа:
-
-- Реализация MVVM архитектуры: MainViewModel, MainWindow.xaml и привязка данных...
+Обнови лог согласно инструкции в `Migration_Log.md`.
