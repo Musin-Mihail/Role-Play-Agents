@@ -11,31 +11,38 @@
 - Проект работает через `main.py` с бесконечным циклом `while True`.
 - Ввод/вывод осуществляется через `print`/`input`.
 - Агенты хранятся в памяти во время работы скрипта.
-- Логирование пишет одновременно в консоль и файл.
+- Хардкод путей и API URL.
 
 ### Глобальный план миграции (Roadmap):
 
-1.  **Setup Phase:** Создание структуры папок, виртуального окружения, базового приложения FastAPI, настройки конфигов (`Settings`).
-2.  **Data Layer:** Создание Pydantic-моделей для `state.json` (чтение/запись) и моделей Request/Response (DTO).
-3.  **Core Refactoring:**
-    - Адаптация агентов для работы через Dependency Injection.
-    - Перенос утилит (`game_utils`, `state_manager`) в сервисный слой.
-    - Удаление `input`/`print` из логики агентов.
-4.  **API Implementation:**
-    - Реализация эндпоинта `/health`.
-    - Реализация `/game/start` (инициализация сессии).
-    - Реализация `/game/turn` (основной игровой цикл: User Input -> AI Response).
-5.  **Cleanup:** Удаление старого `main.py` и `Launcher`, финальная проверка.
+1.  **Setup Phase:** Создание структуры папок, `requirements.txt`, настройка `config.py` (Pydantic Settings) и базового `main.py`.
+2.  **Data Layer:** Создание Pydantic-моделей для `state.json` (Game State) и DTO моделей для Request/Response.
+3.  **Core Migration (Part 1 - Infrastructure):**
+    - Перенос утилит (`game_utils`, `state_manager`, `chronology_manager`) в сервисный слой (`backend/app/services`).
+    - Адаптация простых агентов (`TranslatorAgent`, `WorldDescriptorAgent`) под Dependency Injection.
+4.  **Core Migration (Part 2 - Logic Agents):**
+    - Рефакторинг сложных агентов (`ActionSelector`, `StoryWriter`, `MotivationGenerator`) — удаление `print`, переход на возвращение Pydantic объектов или словарей.
+5.  **Game Engine Service:**
+    - Создание сервиса-оркестратора (`GameEngine`), который заменяет логику цикла из старого `main.py`. Он должен принимать состояние и ввод, и возвращать результат хода (Stateless).
+6.  **API Implementation:**
+    - Реализация роутеров FastAPI (`/api/v1/game/turn`, `/api/v1/game/start`). Подключение `GameEngine`.
+7.  **Cleanup:** Удаление старого `main.py`, `Launcher` и временных файлов.
+
+---
 
 ### Предложение ИИ для следующего этапа (Этап 1):
 
 **Цель:** Подготовить фундамент приложения.
 
 - **Создать структуру директорий:**
-  - `backend/app/api/` (для роутеров)
-  - `backend/app/core/` (для config.py и logging)
-  - `backend/app/models/` (для Pydantic схем)
-  - `backend/app/services/` (для бизнес-логики и агентов)
-- **Создать `requirements.txt`** с `fastapi`, `uvicorn`, `pydantic-settings`, `openai`.
-- **Создать `backend/app/core/config.py`** (Pydantic Settings).
-- **Создать минимальный `backend/app/main.py`** с запуском сервера.
+  - `backend/app/api/` (роутеры)
+  - `backend/app/core/` (конфигурация, логгирование)
+  - `backend/app/models/` (схемы данных)
+  - `backend/app/services/` (бизнес-логика)
+- **Создать `requirements.txt`** (fastapi, uvicorn, pydantic-settings, openai).
+- **Создать `backend/app/core/config.py`**:
+  - Реализовать класс `Settings` с загрузкой `OPENAI_API_KEY`, `API_BASE_URL` из `.env`.
+- **Создать `backend/app/main.py`**:
+  - Базовая инициализация FastAPI app.
+  - Настройка CORS middleware.
+  - Health check endpoint.
