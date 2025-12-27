@@ -134,3 +134,26 @@
 ### Предложение ИИ для следующего этапа:
 
 - Следующим шагом (Этап 5) необходимо реализовать **Game Engine Service**. Это будет оркестратор, который заменит цикл `while True` из старого `main.py`. Он будет принимать ввод пользователя, вызывать цепочку сервисов (Selector -> Motivation -> Consequence -> Writer -> Verifier) и сохранять результат, используя `GameStateService`.
+
+### Этап 5: Game Engine Service Implementation
+
+### Действия ИИ:
+
+- Создан `backend/app/services/chronicle_service.py` для управления историей игры и генерации саммари (аналог `chronology_manager.py`).
+- Создан `backend/app/services/game_engine_service.py` — основной оркестратор, реализующий логику игрового хода (User Input -> State Update -> AI Logic -> Save).
+- Обновлен `backend/app/core/deps.py` для внедрения `GameEngineService` и `ChronicleService`.
+- Написан интеграционный тест `test_step_5.py`, проверяющий полный цикл хода без запуска HTTP-сервера.
+
+### Предложенные изменения/артефакты:
+
+- Файл: `backend/app/services/chronicle_service.py`
+- Файл: `backend/app/services/game_engine_service.py`
+- Файл: `backend/app/core/deps.py`
+- Файл: `backend/app/services/__init__.py`
+
+### Предложение ИИ для следующего этапа:
+
+- Следующим шагом (Этап 6) нужно реализовать **API Layer**.
+- Создать роутер `backend/app/api/endpoints/game.py`.
+- Реализовать эндпоинт `POST /game/turn`, который будет принимать `TurnRequest`, вызывать `GameEngineService` и возвращать `TurnResponse`.
+- Подключить роутер к основному приложению в `main.py`.
