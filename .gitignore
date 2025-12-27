@@ -214,6 +214,7 @@ __pycache__/
 log.txt
 chronology.txt
 review_changes.txt
+context_for_ai.txt
 
 # IDE files
 .idea/

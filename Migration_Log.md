@@ -43,6 +43,26 @@
 - **Создать `backend/app/core/config.py`**:
   - Реализовать класс `Settings` с загрузкой `OPENAI_API_KEY`, `API_BASE_URL` из `.env`.
 - **Создать `backend/app/main.py`**:
+
   - Базовая инициализация FastAPI app.
   - Настройка CORS middleware.
   - Health check endpoint.
+
+### Этап 1: Setup Phase
+
+### Действия ИИ:
+
+- Создана базовая структура директорий `backend/app/`.
+- Сформирован `requirements.txt` с основными зависимостями (FastAPI, Uvicorn, Pydantic).
+- Реализована конфигурация через `pydantic-settings` (`backend/app/core/config.py`).
+- Создан базовый файл приложения `backend/app/main.py` с Health Check эндпоинтом и CORS.
+
+### Предложенные изменения/артефакты:
+
+- Файл: `backend/requirements.txt`
+- Файл: `backend/app/core/config.py`
+- Файл: `backend/app/main.py`
+
+### Предложение ИИ для следующего этапа:
+
+- Следующим шагом логично будет реализовать **Data Layer**: создать Pydantic-модели, отражающие структуру `state.json` и DTO для взаимодействия с API. Это необходимо перед переносом логики сервисов.
