@@ -12,10 +12,11 @@
 ### Глобальный план (Roadmap Phase 2):
 
 1.  **Project Setup & Data Layer:**
-    - Инициализация проекта.
-    - Подключение `CommunityToolkit.Mvvm` и `Microsoft.Extensions.DependencyInjection`.
-    - Создание C# DTO моделей (с учетом маппинга snake_case -> PascalCase).
-    - Реализация `GameApiService` (HTTP Client).
+    - Инициализация проекта (.NET 9 WPF).
+    - Подключение `CommunityToolkit.Mvvm`, `Microsoft.Extensions.Hosting`, `Microsoft.Extensions.Http`.
+    - Настройка `appsettings.json` (Base URL).
+    - Создание C# DTO моделей (полное зеркалирование Python моделей, snake_case -> PascalCase).
+    - Реализация `GameApiService` (IHttpClientFactory).
     - Настройка DI в `App.xaml.cs`.
 2.  **MVVM Core & Basic UI:**
     - Создание `MainViewModel`.
@@ -27,7 +28,7 @@
 4.  **UX Polish:**
     - Стилизация компонентов (Resources/Styles).
     - Авто-скролл лога сообщений.
-    - Обработка ошибок соединения.
+    - Обработка ошибок соединения (Retry policies).
 
 ---
 
@@ -36,11 +37,11 @@
 **Цель:** Инициализация проекта и слой данных.
 
 - **Создать проект:** `dotnet new wpf -n RolePlayClient`.
-- **Добавить пакеты:** - `CommunityToolkit.Mvvm`
-    - `Microsoft.Extensions.DependencyInjection`
+- **Добавить пакеты:**
+  - `CommunityToolkit.Mvvm`
+  - `Microsoft.Extensions.Hosting`
+  - `Microsoft.Extensions.Http`
 - **Создать структуру:** `Models/`, `Services/`, `ViewModels/`, `Views/`.
-- **Реализовать Models:** Создать `record` классы для `TurnRequest`, `TurnResponse`, `GameState`.
-- **Реализовать Service:** Класс `GameApiService` с настройкой `JsonNamingPolicy.SnakeCaseLower`.
-- **Настроить App.xaml.cs:** Внедрение зависимостей (DI) для сервисов и главного окна.
-
-_Использование DI и CommunityToolkit обеспечит чистую архитектуру._
+- **Реализовать Models:** Создать `record` классы для `TurnRequest`, `TurnResponse`, `GameState` (и всех вложенных типов).
+- **Реализовать Service:** Класс `GameApiService` с настройкой `JsonNamingPolicy.SnakeCaseLower` и `JsonStringEnumConverter`.
+- **Настроить App.xaml.cs:** Внедрение зависимостей (DI) и чтение конфигурации.
