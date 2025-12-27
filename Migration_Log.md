@@ -108,3 +108,29 @@
 ### Предложение ИИ для следующего этапа:
 
 - Следующим шагом (Этап 4) необходимо выполнить **Core Migration (Part 2 - Logic Agents)**. Нужно рефакторить "интеллектуальных" агентов (`ActionSelector`, `MotivationGenerator`, `ActionConsequence`, `StoryWriter`, `StoryVerifier`) в Stateless-сервисы. Они должны перестать использовать `print`/`log_func` и начать возвращать типизированные данные (или словари), принимая зависимости через конструктор.
+
+### Этап 4: Core Migration (Part 2 - Logic Agents)
+
+### Действия ИИ:
+
+- Создан модуль `backend/app/core/utils.py` с функциями `deep_merge_dicts`, `get_scene_context`, `get_characters_snapshot`, которые были портированы из legacy `game_utils.py` и адаптированы под Pydantic `GameState`.
+- Создан файл `backend/app/services/agent_services.py`, содержащий 6 Stateless-сервисов:
+  - `WorldDescriptorService`
+  - `ActionSelectorService`
+  - `MotivationGeneratorService`
+  - `ActionConsequenceService`
+  - `StoryWriterService`
+  - `StoryVerifierService`
+- Логика агентов полностью очищена от `print`/`input` и глобального состояния. Теперь они принимают `GameState` (Pydantic модель) и возвращают типизированные данные.
+- Обновлен `backend/app/core/deps.py` для регистрации провайдеров новых сервисов (Dependency Injection).
+
+### Предложенные изменения/артефакты:
+
+- Файл: `backend/app/core/utils.py`
+- Файл: `backend/app/services/agent_services.py`
+- Файл: `backend/app/core/deps.py`
+- Тест: `test_step_4.py`
+
+### Предложение ИИ для следующего этапа:
+
+- Следующим шагом (Этап 5) необходимо реализовать **Game Engine Service**. Это будет оркестратор, который заменит цикл `while True` из старого `main.py`. Он будет принимать ввод пользователя, вызывать цепочку сервисов (Selector -> Motivation -> Consequence -> Writer -> Verifier) и сохранять результат, используя `GameStateService`.
